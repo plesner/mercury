@@ -1,0 +1,16 @@
+{
+  "name": "Mercury",
+  "version": "0.3",
+  "description": "QuickSilver-style bookmark navigation",
+  "omnibox": {
+    "keyword": "m"
+  },
+  "icons": {
+    "16": "icon16.png"
+  },
+  "permissions": [
+    "bookmarks",
+    "tabs"
+  ],
+  "background_page": "background.html"
+}
