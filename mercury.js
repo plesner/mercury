@@ -20,14 +20,18 @@ Bookmark.prototype.toString = function () {
   return "bookmark(path: " + this.path + ", url: " + this.url + ")";
 };
 
+function escape(str) {
+  return str.replace("&", "&amp;");
+}
+
 /**
  * Returns a human-readable description of this bookmark.
  */
 Bookmark.prototype.getDescription = function () {
   var reversePath = [];
   for (var i = this.path.length - 1; i > 0; i--)
-    reversePath.push(this.path[i]);
-  return "<match>" + this.path[0] + "</match> - " + reversePath.join(" / ");
+    reversePath.push(escape(this.path[i]));
+  return escape(this.path[i]) + " - " + reversePath.join(" / ");
 };
 
 /**
@@ -35,6 +39,13 @@ Bookmark.prototype.getDescription = function () {
  */
 Bookmark.prototype.getScore = function (input) {
   return scoreVectors(this.path, input);
+};
+
+/**
+ * Returns the title of this bookmark.
+ */
+Bookmark.prototype.getTitle = function () {
+  return this.path[0];
 };
 
 /**
@@ -104,12 +115,17 @@ function BookmarkRepository() {
   /**
    * A list of bookmark objects.
    */
-  this.bookmarks = null;
+  this.bookmarks = [];
 
   /**
    * Have we already started reloading bookmarks?
    */
   this.isReloading = false;
+
+  /**
+   * These listeners want to be notified when the bookmarks change.
+   */
+  this.changeListeners = [];
 
   this.initialize();
 }
@@ -122,6 +138,30 @@ BookmarkRepository.prototype.initialize = function () {
   chrome.bookmarks.onCreated.addListener(this.reload.bind(this));
   chrome.bookmarks.onRemoved.addListener(this.reload.bind(this));
   this.reload();
+};
+
+/**
+ * Adds a callback that will be called whenever the set of bookmarks change.
+ */
+BookmarkRepository.prototype.addChangeListener = function (callback) {
+  this.changeListeners.push(callback);
+};
+
+/**
+ * Invokes all the change listeners.
+ */
+BookmarkRepository.prototype.notifyChangeListeners = function () {
+  for (var i = 0; i < this.changeListeners.length; i++) {
+    var callback = this.changeListeners[i];
+    callback(this);
+  }
+};
+
+/**
+ * Returns the current list of bookmarks.
+ */
+BookmarkRepository.prototype.getCurrent = function () {
+  return this.bookmarks;
 };
 
 /**
@@ -143,6 +183,7 @@ BookmarkRepository.prototype.onFetched = function (tree) {
     this.addBookmarks(tree[i], []);
   }
   this.isReloading = false;
+  this.notifyChangeListeners();
 };
 
 var kTitleBlacklist = ["", "bookmarks bar", "other bookmarks"];
@@ -173,7 +214,15 @@ BookmarkRepository.prototype.addBookmarks = function (node, path) {
  * Main handler for this extension.
  */
 function Mercury() {
+  /**
+   * Repository of bookmarks that keeps itself updated when they change.
+   */
   this.bookmarks = new BookmarkRepository();
+
+  /**
+   * The last suggestion we made which we'll use if the user selects the
+   * default suggestion.
+   */
   this.lastSuggestions = null;
 }
 
@@ -185,10 +234,10 @@ Mercury.prototype.main = function () {
 };
 
 /**
- * Returns a list of all the bookmarks.
+ * Returns the bookmark repository.
  */
 Mercury.prototype.getBookmarks = function () {
-  return this.bookmarks.bookmarks;
+  return this.bookmarks;
 };
 
 /**
@@ -203,11 +252,35 @@ Mercury.prototype.install = function () {
  * Update the set of suggestions.
  */
 Mercury.prototype.onInputChanged = function (text, suggest) {
+  var suggests = this.fetchNextSuggestion(text);
+  if (suggests.length > 0) {
+    var bestSuggest = suggests[0];
+    var rest = [];
+    for (var i = 1; i < suggests.length; i++)
+      rest.push(suggests[i]);
+    suggest(rest);
+    chrome.omnibox.setDefaultSuggestion({
+      'description': bestSuggest.description
+    });
+  }
+};
+
+/**
+ * Calculate and return the next set of suggestions, updating the internal
+ * state of this object.
+ */
+Mercury.prototype.fetchNextSuggestion = function (text) {
   if (text) {
     // We don't bother updating for the empty string.
-    this.lastSuggestions = new SuggestionRequest(this.getBookmarks(), text, suggest);
-    this.lastSuggestions.run();
+    this.lastSuggestions = new SuggestionRequest(this.getBookmarks().getCurrent(), text);
+    return this.lastSuggestions.run();
+  } else {
+    return [];
   }
+}
+
+Mercury.prototype.getSuggestions = function (text, suggest) {
+  
 };
 
 /**
@@ -228,11 +301,10 @@ Mercury.prototype.onInputEntered = function (text) {
   });
 };
 
-function SuggestionRequest(bookmarks, text, suggest) {
+function SuggestionRequest(bookmarks, text) {
   this.bookmarks = bookmarks;
   this.rawText = text;
   this.text = text.toLowerCase().split(" ");
-  this.suggest = suggest;
   this.bestMatch = null;
 }
 
@@ -272,21 +344,18 @@ SuggestionRequest.prototype.run = function () {
       matches.push([score, bookmark]);
   }
   matches.sort(compareCandidates);
+  if (matches.length > 0) {
+    this.bestMatch = matches[0][1];
+  }
   var suggests = [];
-  for (var i = 1; i < matches.length; i++) {
+  for (var i = 0; i < matches.length; i++) {
     var bookmark = matches[i][1];
     suggests.push({
       'content': bookmark.url,
       'description': bookmark.getDescription()
     });
   }
-  this.suggest(suggests);
-  if (matches.length > 0) {
-    this.bestMatch = matches[0][1];
-    chrome.omnibox.setDefaultSuggestion({
-      'description': this.bestMatch.getDescription()
-    });
-  }
+  return suggests;
 };
 
 function startMercury() {
