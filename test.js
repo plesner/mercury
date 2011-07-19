@@ -1,3 +1,11 @@
+String.prototype.startsWith = function (substr) {
+  if (this.length < substr.length) {
+    return false;
+  } else {
+    return this.substring(0, substr.length) == substr;
+  }
+};
+
 function assertTrue(cond) {
   if (!cond) {
     FAIL;
@@ -43,8 +51,23 @@ function testGetDistance() {
   assertTrue(getDistance("abcdefg", "x") == -1);
 }
 
-function testMercury() {
-  testGetDistance();
-  testScoreVectors();
-  testCompareScores();
+function runSingleTest(fun, name) {
+  var div = document.createElement('div');
+  div.innerText = name;
+  document.body.appendChild(div);
+  try {
+    fun();
+    div.style.color = "green";
+  } catch (e) {
+    div.style.color = "red";
+    div.innerText += " (" + e + ")";
+  }
+}
+
+function runMercuryTests() {
+  for (prop in this) {
+    if (String(prop).startsWith("test")) {
+      runSingleTest(this[prop], prop);
+    }
+  }
 }
