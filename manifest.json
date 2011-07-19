@@ -3,7 +3,6 @@
   "version": "0.4",
   "description": "QuickSilver-style bookmark navigation",
   "background_page": "background.html",
-  "default_locale": "en",
   "omnibox": {
     "keyword": "m"
   },

@@ -1,0 +1,9 @@
+2011-07-20  0.4
+    Cleaned up the code considerably.
+    
+    Added highlighting of the input string in the matched bookmarks.
+    
+    Fixed an escaping issue where any bookmark that included the & character
+    in the description would cause suggestion processing to be aborted.
+
+    Added 48x48 icon for display on the extension settings page.
