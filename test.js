@@ -21,6 +21,11 @@ function compareLists(one, two) {
   }
 }
 
+function compareScores(a, b) {
+  function newMatch(a) { return new Match(0, 0, a); }
+  return new Score(a.map(newMatch)).compareTo(new Score(b.map(newMatch)));
+}
+
 function testCompareScores() {
   assertTrue(compareScores([1, 1], [1, 1]) == 0);
   assertTrue(compareScores([0, 1], [1, 1]) < 0);
@@ -28,6 +33,15 @@ function testCompareScores() {
   assertTrue(compareScores([1, 0], [1, 1]) < 0);
   assertTrue(compareScores([1, 1], [1, 0]) > 0);
   assertTrue(compareScores([1, 2], [1, 1]) > 0);
+}
+
+function scoreVectors(a, b) {
+  var score = Score.create(a, b);
+  if (score == null) {
+    return null;
+  } else {
+    return score.matches.map(function (m) { return m.score; });
+  }
 }
 
 function testScoreVectors() {
@@ -39,16 +53,16 @@ function testScoreVectors() {
 }
 
 function testGetDistance() {
-  assertTrue(getDistance("abcdefg", "abcdefg") == 0);
-  assertTrue(getDistance("abcdefg", "abcdef") == 1);
-  assertTrue(getDistance("abcdefg", "abcde") == 1);
-  assertTrue(getDistance("abcdefg", "a") == 1);
-  assertTrue(getDistance("abcdefg", "abd") == 2);
-  assertTrue(getDistance("abcdefg", "abe") == 3);
-  assertTrue(getDistance("abcdefg", "acd") == 2);
-  assertTrue(getDistance("abcdefg", "ade") == 3);
-  assertTrue(getDistance("abcdefg", "ag") == 5);
-  assertTrue(getDistance("abcdefg", "x") == -1);
+  assertTrue(Match.getScore("abcdefg", "abcdefg") == 0);
+  assertTrue(Match.getScore("abcdefg", "abcdef") == 1);
+  assertTrue(Match.getScore("abcdefg", "abcde") == 1);
+  assertTrue(Match.getScore("abcdefg", "a") == 1);
+  assertTrue(Match.getScore("abcdefg", "abd") == 2);
+  assertTrue(Match.getScore("abcdefg", "abe") == 3);
+  assertTrue(Match.getScore("abcdefg", "acd") == 2);
+  assertTrue(Match.getScore("abcdefg", "ade") == 3);
+  assertTrue(Match.getScore("abcdefg", "ag") == 5);
+  assertTrue(Match.getScore("abcdefg", "x") == -1);
 }
 
 function runSingleTest(fun, name) {

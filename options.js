@@ -3,19 +3,19 @@ var mercury = new Mercury();
 function textKeyUp() {
   var entries = document.getElementById("entries");
   var text = document.getElementById("text").value;
+  var suggests = mercury.fetchNextSuggestion(text);
+  showSuggestions(suggests);
 }
 
-function showBookmarks(bookmarks) {
-  var div = document.getElementById("bookmarks");
-  var current = bookmarks.getCurrent();
+function showSuggestions(suggests) {
+  var div = document.getElementById("entries");
   while (div.childNodes.length > 0)
     div.removeChild(div.childNodes[0]);
-  for (var i = 0; i < current.length; i++) {
-    var bookmark = current[i];
+  suggests.forEach(function (suggest) {
     var child = document.createElement('div');
-    child.innerText = bookmark.path;
+    child.innerText = suggest.getScore() + " - " + suggest.getDescription();
     div.appendChild(child);
-  }
+  });
 }
 
 function startOptions() {

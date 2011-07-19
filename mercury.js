@@ -20,25 +20,21 @@ Bookmark.prototype.toString = function () {
   return "bookmark(path: " + this.path + ", url: " + this.url + ")";
 };
 
-function escape(str) {
-  return str.replace("&", "&amp;");
-}
-
 /**
  * Returns a human-readable description of this bookmark.
  */
 Bookmark.prototype.getDescription = function () {
   var reversePath = [];
   for (var i = this.path.length - 1; i > 0; i--)
-    reversePath.push(escape(this.path[i]));
-  return escape(this.path[i]) + " - " + reversePath.join(" / ");
+    reversePath.push(this.path[i]);
+  return this.path[i] + " - " + reversePath.join(" / ");
 };
 
 /**
  * Returns a score vector of this bookmark agains the given input.
  */
 Bookmark.prototype.getScore = function (input) {
-  return scoreVectors(this.path, input);
+  return Score.create(this.path, input);
 };
 
 /**
@@ -49,11 +45,33 @@ Bookmark.prototype.getTitle = function () {
 };
 
 /**
- * Determines if the given needle occurs in the haystack, not necessarily
- * contiguously, returning a non-negative value if it does.  The smaller the
- * score the "better" it is, 0 meaning a perfect match.
+ * A single match between the input and a base, along with a score showing
+ * the quality of the match.
  */
-function getDistance(haystack, needle) {
+function Match(baseIndex, inputIndex, score) {
+  this.baseIndex = baseIndex;
+  this.inputIndex = inputIndex;
+  this.score = score;
+}
+
+Match.prototype.getBaseIndex = function () {
+  return this.baseIndex;
+};
+
+Match.prototype.getInputIndex = function () {
+  return this.inputIndex;
+};
+
+Match.prototype.compareTo = function (that) {
+  return this.score - that.score;
+};
+
+/**
+ * Determines if the given needle occurs as a subsequence of the haystack,
+ * returning a non-negative value if it does.  The smaller the score the
+ * "better" it is, 0 meaning a perfect match.
+ */
+Match.getScore = function (haystack, needle) {
   if (needle.length > haystack.length)
     return -1;
   var cursor = 0;
@@ -71,24 +89,60 @@ function getDistance(haystack, needle) {
   return score;
 }
 
-function scoreVectors(base, input) {
+/**
+ * A vector of matches that scores the input against a base.
+ */
+function Score(matches) {
+  this.matches = matches;
+}
+
+/**
+ * Compares two vectors of numbers lexicographically.
+ */
+Score.prototype.compareTo = function (that) {
+  for (var i = 0; i < this.matches.length; i++) {
+    var diff = this.matches[i].compareTo(that.matches[i]);
+    if (diff != 0)
+      return diff;
+  }
+  return 0;
+}
+
+/**
+ * Compares two lists of words, returning a list of matches.  If the two lists
+ * don't match null is returned.  We do this by basically matching each word
+ * in the input with each word in the base.  If any word has no match we bail
+ * out, and we only look for a match for the next input token after the first
+ * match for the previous input token.
+ *
+ * Each resulting score in the returned list is the score of the two
+ * corresponding matching strings, plus 1 for the distance in index between
+ * where the matching strings occur.
+ */
+Score.create = function (base, input) {
+  // Input is smaller than what we're matching it against.  Fail.
   if (base.length < input.length) {
     return null;
   }
+  // Where was the first match of the last input token?
   var baseCursor = 0;
   var matches = [];
+  // For each word in the input find the best match in the base.
   for (var i = 0; i < input.length; i++) {
+    // Did anything match?
     var foundOne = false;
+    // At which index was the first match of this token?
     var minMatch = Infinity;
-    var maxMatch = -Infinity;
     for (var j = baseCursor; j < base.length; j++) {
-      var plainDist = getDistance(base[j], input[i]);
+      var plainDist = Match.getScore(base[j], input[i]);
       if (plainDist >= 0) {
+        // We have found a match.
         foundOne = true;
-        matches.push([i, j, plainDist + (j - i)]);
+        // We penalize a match the further the words are apart.
+        var newDist = plainDist + (j - i);
+        matches.push(new Match(j, i, newDist));
         if (j < minMatch)
           minMatch = j;
-        maxMatch = j;
       }
     }
     if (!foundOne) {
@@ -96,15 +150,17 @@ function scoreVectors(base, input) {
     }
     baseCursor = minMatch + 1;
   }
+  // Scan through the result and find the matching that occur earliest in the
+  // input.
   var result = [];
   var next = 0;
   for (var i = 0; i < matches.length; i++) {
-    if (matches[i][0] == next) {
-      result.push(matches[i][2]);
+    if (matches[i].getInputIndex() == next) {
+      result.push(matches[i]);
       next++;
     }
   }
-  return result;
+  return new Score(result);
 }
 
 /**
@@ -257,11 +313,9 @@ Mercury.prototype.onInputChanged = function (text, suggest) {
     var bestSuggest = suggests[0];
     var rest = [];
     for (var i = 1; i < suggests.length; i++)
-      rest.push(suggests[i]);
+      rest.push(suggests[i].asSuggestResult());
     suggest(rest);
-    chrome.omnibox.setDefaultSuggestion({
-      'description': bestSuggest.description
-    });
+    chrome.omnibox.setDefaultSuggestion(bestSuggest.asDefaultSuggestion());
   }
 };
 
@@ -277,10 +331,6 @@ Mercury.prototype.fetchNextSuggestion = function (text) {
   } else {
     return [];
   }
-}
-
-Mercury.prototype.getSuggestions = function (text, suggest) {
-  
 };
 
 /**
@@ -292,7 +342,7 @@ Mercury.prototype.onInputEntered = function (text) {
     // Looks like the user picked the default suggestion.  In that
     // case we're given the raw input rather than the matching url
     // so we have to grab the url from the last suggestion.
-    text = this.lastSuggestions.bestMatch.url;
+    text = this.lastSuggestions.bestMatch.getUrl();
   }
   chrome.tabs.getSelected(null, function (tab) {
     chrome.tabs.update(tab.id, {
@@ -301,27 +351,41 @@ Mercury.prototype.onInputEntered = function (text) {
   });
 };
 
+/**
+ * Contains the stats associated with calculating a single set of suggestions.
+ */
 function SuggestionRequest(bookmarks, text) {
+  /**
+   * The set of bookmarks that was used to generate these suggestions.
+   */
   this.bookmarks = bookmarks;
+
+  /**
+   * The raw input.  We don't base the suggestions on this but it can be used
+   * to compare new inputs to.
+   */
   this.rawText = text;
+  
+  /**
+   * List of the words in the input.
+   */
   this.text = text.toLowerCase().split(" ");
+  
+  /**
+   * The best match, if we've found one.
+   */
   this.bestMatch = null;
 }
 
-function compareScores(one, two) {
-  for (var i = 0; i < one.length; i++) {
-    var diff = one[i] - two[i];
-    if (diff != 0)
-      return diff;
-  }
-  return 0;
-}
-
-function compareCandidates(one, two) {
-  var scoreCmp = compareScores(one[0], two[0]);
+/**
+ * Compares two candidates, first by score vector and if they're equal
+ * alphabetically by URL.
+ */
+SuggestionRequest.compareCandidates = function (one, two) {
+  var scoreCmp = one.getScore().compareTo(two.getScore());
   if (scoreCmp == 0) {
-    var urlOne = one[1].url;
-    var urlTwo = two[1].url;
+    var urlOne = one.getUrl();
+    var urlTwo = two.getUrl();
     if (urlOne < urlTwo) {
       return -1;
     } else if (urlOne > urlTwo) {
@@ -334,6 +398,10 @@ function compareCandidates(one, two) {
   }
 }
 
+/**
+ * Returns a list of potential matches sorted by match quality.  The best
+ * match is saved in a field for potential later use.
+ */
 SuggestionRequest.prototype.run = function () {
   var matches = [];
   var suggestions = [];
@@ -341,21 +409,69 @@ SuggestionRequest.prototype.run = function () {
     var bookmark = this.bookmarks[i];
     var score = bookmark.getScore(this.text);
     if (score)
-      matches.push([score, bookmark]);
+      matches.push(new Suggestion(bookmark, score));
   }
-  matches.sort(compareCandidates);
+  matches.sort(SuggestionRequest.compareCandidates);
   if (matches.length > 0) {
-    this.bestMatch = matches[0][1];
+    this.bestMatch = matches[0];
   }
-  var suggests = [];
-  for (var i = 0; i < matches.length; i++) {
-    var bookmark = matches[i][1];
-    suggests.push({
-      'content': bookmark.url,
-      'description': bookmark.getDescription()
-    });
-  }
-  return suggests;
+  return matches;
+};
+
+/**
+ * A single suggested result.
+ */
+function Suggestion(bookmark, score) {
+  this.bookmark = bookmark;
+  this.score = score;
+}
+
+/**
+ * Escape a description so it can be displayed by chrome.
+ */
+Suggestion.escape = function (str) {
+  return str.replace("&", "&amp;");
+}
+
+/**
+ * Returns an escaped description of this suggestion.
+ */
+Suggestion.prototype.getDescription = function () {
+  return Suggestion.escape(this.bookmark.getDescription());
+};
+
+/**
+ * Returns the score vector this suggestion received.
+ */
+Suggestion.prototype.getScore = function () {
+  return this.score;
+};
+
+/**
+ * Returns the url to go to for this suggestion.
+ */
+Suggestion.prototype.getUrl = function () {
+  return this.bookmark.url;
+};
+
+/**
+ * Returns a suggest result describing this suggestion suitable to be consumed
+ * by a suggest callback.
+ */
+Suggestion.prototype.asSuggestResult = function () {
+  return {
+    'content': this.getUrl(),
+    'description': this.getDescription()
+  };
+};
+
+/**
+ * Returns a default suggestion suitable to be used by the omnibox.
+ */
+Suggestion.prototype.asDefaultSuggestion = function () {
+  return {
+    'description': this.getDescription()
+  };
 };
 
 function startMercury() {
