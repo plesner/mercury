@@ -31,6 +31,13 @@ Bookmark.prototype.getDescription = function () {
 };
 
 /**
+ * Returns the list of strings that makes up this bookmark's path.
+ */
+Bookmark.prototype.getPath = function () {
+  return this.path;
+};
+
+/**
  * Returns a score vector of this bookmark agains the given input.
  */
 Bookmark.prototype.getScore = function (input) {
@@ -66,6 +73,10 @@ Match.prototype.compareTo = function (that) {
   return this.score - that.score;
 };
 
+Match.prototype.getScore = function () {
+  return this.score;
+};
+
 /**
  * Determines if the given needle occurs as a subsequence of the haystack,
  * returning a non-negative value if it does.  The smaller the score the
@@ -90,6 +101,52 @@ Match.getScore = function (haystack, needle) {
 }
 
 /**
+ * Returns a mapping from needle characters to haystack characters that
+ * identify where the overlap between them is.  This method _must_ work the
+ * same way as Match.getScore.
+ */
+Match.getOverlapIndices = function (haystack, needle) {
+  if (needle.length > haystack.length)
+    return [];
+  var cursor = 0;
+  var mappings = [];
+  for (var i = 0; i < needle.length; i++) {
+    var next = needle[i];
+    var match = haystack.indexOf(next, cursor);
+    if (match == -1)
+      return []
+    mappings[i] = match;
+  }
+  return mappings;
+};
+
+/**
+ * Returns the same data as getOverlapIndices but as a list of overlap
+ * regions, a list of pairs of [start, end] points of overlaps.
+ */
+Match.getOverlapRegions = function (haystack, needle) {
+  var indices = Match.getOverlapIndices(haystack, needle);
+  var regions = [];
+  var currentStart = -2;
+  var currentEnd = -2;
+  indices.forEach(function (index) {
+    if (index == currentEnd + 1) {
+      currentEnd = index;
+    } else {
+      if (currentStart >= 0) {
+        regions.push([currentStart, currentEnd]);
+      }
+      currentStart = index;
+      currentEnd = index;
+    }
+  });
+  if (currentStart >= 0) {
+    regions.push([currentStart, currentEnd]);
+  }
+  return regions;
+};
+
+/**
  * A vector of matches that scores the input against a base.
  */
 function Score(matches) {
@@ -106,7 +163,23 @@ Score.prototype.compareTo = function (that) {
       return diff;
   }
   return 0;
-}
+};
+
+/**
+ * Returns the list of match objects.
+ */
+Score.prototype.getMatches = function () {
+  return this.matches;
+};
+
+/**
+ * For debugging.
+ */
+Score.prototype.toString = function () {
+  return this.matches
+      .map(function (match) { return match.getScore(); })
+      .join(",")
+};
 
 /**
  * Compares two lists of words, returning a list of matches.  If the two lists
@@ -409,7 +482,7 @@ SuggestionRequest.prototype.run = function () {
     var bookmark = this.bookmarks[i];
     var score = bookmark.getScore(this.text);
     if (score)
-      matches.push(new Suggestion(bookmark, score));
+      matches.push(new Suggestion(bookmark, this.text, score));
   }
   matches.sort(SuggestionRequest.compareCandidates);
   if (matches.length > 0) {
@@ -421,23 +494,51 @@ SuggestionRequest.prototype.run = function () {
 /**
  * A single suggested result.
  */
-function Suggestion(bookmark, score) {
+function Suggestion(bookmark, text, score) {
   this.bookmark = bookmark;
+  this.text = text;
   this.score = score;
-}
-
-/**
- * Escape a description so it can be displayed by chrome.
- */
-Suggestion.escape = function (str) {
-  return str.replace("&", "&amp;");
 }
 
 /**
  * Returns an escaped description of this suggestion.
  */
 Suggestion.prototype.getDescription = function () {
-  return Suggestion.escape(this.bookmark.getDescription());
+  // First make a mapping from base element to matches.
+  var matches = this.score.getMatches();
+  var mapping = [];
+  matches.forEach(function (match) {
+    mapping[match.getBaseIndex()] = match;
+  });
+  var text = "";
+  var regions = [];
+  var path = this.bookmark.getPath();
+  var self = this;
+  // Appends the given string which appears in the base at the given index to
+  // the text, updating the regions appropriately.
+  function addPart(part, i) {
+    var match = mapping[i];
+    var startOffset = text.length;
+    text += part;
+    // There was a match on this part of the input so we have to highlight
+    // the overlap.
+    if (match != null) {
+      var inputPart = self.text[match.getInputIndex()];
+      Match.getOverlapRegions(part, inputPart).forEach(function (region) {
+        var start = region[0] + startOffset;
+        var end = region[1] + startOffset;
+        regions.push([start, end])
+      });
+    }
+  }
+  addPart(path[0], 0);
+  text += " - ";
+  for (var i = path.length - 1; i > 0; i--) {
+    addPart(path[i], i);
+    if (i > 1)
+      text += " / ";
+  }
+  return new Markup(text, regions);
 };
 
 /**
@@ -461,7 +562,7 @@ Suggestion.prototype.getUrl = function () {
 Suggestion.prototype.asSuggestResult = function () {
   return {
     'content': this.getUrl(),
-    'description': this.getDescription()
+    'description': this.getDescription().toXml()
   };
 };
 
@@ -470,9 +571,83 @@ Suggestion.prototype.asSuggestResult = function () {
  */
 Suggestion.prototype.asDefaultSuggestion = function () {
   return {
-    'description': this.getDescription()
+    'description': this.getDescription().toXml()
   };
 };
+
+/**
+ * A piece of text along with some formatting instructions.
+ */
+function Markup(text, regions) {
+  /**
+   * The raw text.
+   */
+  this.text = text;
+  
+  /**
+   * The regions where this text should be highlighted.
+   */
+  this.regions = regions;
+}
+
+/**
+ * Escape a description so it can be displayed by chrome.
+ */
+Markup.escape = function (str) {
+  return str.replace("&", "&amp;");
+}
+
+/**
+ * For debugging.
+ */
+Markup.prototype.toString = function () {
+  return this.mapParts(function (part, isMarkedUp) {
+    return isMarkedUp ? "[" + part + "]" : part;
+  }).join("");
+};
+
+/**
+ * Formats this markup as omnibox compatible markup.
+ */
+Markup.prototype.toXml = function () {
+  return this.mapParts(function (part, isMarkedUp) {
+    var escaped = Markup.escape(part);
+    if (isMarkedUp) {
+      return "<match>" + escaped + "</match>";
+    } else {
+      return "<dim>" + escaped + "</dim>";
+    }
+  }).join("");
+};
+
+/**
+ * Invokes the callback for each part of this text, passing the part and a
+ * boolean indicating whether this part is marked up or not.
+ */
+Markup.prototype.forEachPart = function (callback) {
+  var text = this.text;
+  var index = 0;
+  this.regions.forEach(function (region) {
+    var start = region[0];
+    var end = region[1];
+    if (index < start) {
+      callback(text.substring(index, start), false);
+    }
+    callback(text.substring(start, end + 1), true);
+    index = end + 1;
+  });
+  if (index < text.length) {
+    callback(text.substring(index, text.length));
+  }
+};
+
+Markup.prototype.mapParts = function (callback) {
+  var result = [];
+  this.forEachPart(function (part, isMarkedUp) {
+    result.push(callback(part, isMarkedUp));
+  });
+  return result;
+}
 
 function startMercury() {
   (new Mercury()).main();
