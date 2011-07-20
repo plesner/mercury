@@ -1,16 +1,25 @@
 /**
  * A bookmark with a path (its parents as a list), a title and a target url.
  */
-function Bookmark(path, url) {
+function Bookmark(path, pathNoCase, url) {
   /**
    * An ordered list of parent titles, starting at the top of the tree.
    */
   this.path = path;
+  
+  /**
+   * The same as the 'path' field but with the case cleared.
+   */
+  this.pathNoCase = pathNoCase;
 
   /**
    * The URL of this bookmark.
    */
   this.url = url;
+}
+
+Bookmark.dropCase = function (str) {
+  return str.toUpperCase();
 }
 
 /**
@@ -38,10 +47,17 @@ Bookmark.prototype.getPath = function () {
 };
 
 /**
+ * Returns the list of strings that makes up this bookmark's path.
+ */
+Bookmark.prototype.getPathNoCase = function () {
+  return this.pathNoCase;
+};
+
+/**
  * Returns a score vector of this bookmark agains the given input.
  */
 Bookmark.prototype.getScore = function (input) {
-  return Score.create(this.path, input);
+  return Score.create(this.pathNoCase, input);
 };
 
 /**
@@ -313,33 +329,43 @@ BookmarkRepository.prototype.reload = function () {
 BookmarkRepository.prototype.onFetched = function (tree) {
   this.bookmarks = [];
   for (var i = 0; i < tree.length; i++) {
-    this.addBookmarks(tree[i], []);
+    this.addBookmarks(tree[i], [], []);
   }
   this.isReloading = false;
   this.notifyChangeListeners();
 };
 
-var kTitleBlacklist = ["", "bookmarks bar", "other bookmarks"];
+var kTitleBlacklist = [
+  "",
+  Bookmark.dropCase("Bookmarks Bar"),
+  Bookmark.dropCase("Other Bookmarks")
+];
 
 /**
  * Add the given bookmark tree node to the repository.
  */
-BookmarkRepository.prototype.addBookmarks = function (node, path) {
+BookmarkRepository.prototype.addBookmarks = function (node, path, pathNoCase) {
   var url = node.url;
-  var title = node.title.toLowerCase();
+  var title = node.title;
+  var titleNoCase = Bookmark.dropCase(title);
   var newPath = [];
-  if (kTitleBlacklist.indexOf(title) == -1)
+  var newPathNoCase = [];
+  if (kTitleBlacklist.indexOf(titleNoCase) == -1) {
     newPath.push(title);
-  for (var i = 0; i < path.length; i++)
+    newPathNoCase.push(titleNoCase);
+  }
+  for (var i = 0; i < path.length; i++) {
     newPath.push(path[i]);
+    newPathNoCase.push(pathNoCase[i]);
+  }
   if (url) {
     // We're at a bookmark, add it to the list.
-    this.bookmarks.push(new Bookmark(newPath, url));
+    this.bookmarks.push(new Bookmark(newPath, newPathNoCase, url));
   } else {
     // We're at a folder, recursively add bookmarks.
     var children = node.children;
     for (var i = 0; i < children.length; i++)
-      this.addBookmarks(children[i], newPath);
+      this.addBookmarks(children[i], newPath, newPathNoCase);
   }
 };
 
@@ -365,13 +391,6 @@ function Mercury(chrome) {
 }
 
 /**
- * Main entry-point.
- */
-Mercury.prototype.main = function () {
-  this.install();
-};
-
-/**
  * Returns the bookmark repository.
  */
 Mercury.prototype.getBookmarks = function () {
@@ -395,9 +414,9 @@ Mercury.prototype.onInputChanged = function (text, suggest) {
     var best = suggests[0];
     var rest = [];
     for (var i = 1; i < suggests.length; i++)
-      rest.push(suggests[i].asSuggestResult());
+      rest.push(suggests[i]);
     suggest(rest);
-    this.chrome.setOmniboxDefaultSuggestion(best.asDefaultSuggestion());
+    this.chrome.setOmniboxDefaultSuggestion(best);
   }
 };
 
@@ -447,7 +466,7 @@ function SuggestionRequest(bookmarks, text) {
   /**
    * List of the words in the input.
    */
-  this.text = text.toLowerCase().split(" ");
+  this.text = Bookmark.dropCase(text).split(" ");
   
   /**
    * The best match, if we've found one.
@@ -533,7 +552,8 @@ Suggestion.prototype.formatDescription = function (doFormat) {
     // the overlap.
     if (match != null) {
       var inputPart = self.text[match.getInputIndex()];
-      Match.getOverlapRegions(part, inputPart).forEach(function (region) {
+      var partNoCase = Bookmark.dropCase(part);
+      Match.getOverlapRegions(partNoCase, inputPart).forEach(function (region) {
         var start = region[0] + startOffset;
         var end = region[1] + startOffset;
         regions.push([start, end])
@@ -701,7 +721,13 @@ function Chrome() { }
  * Adds a listener that gets notified when the input in the omnibox changes.
  */
 Chrome.prototype.addOmniboxChangedListener = function (listener) {
-  chrome.omnibox.onInputChanged.addListener(listener);
+  chrome.omnibox.onInputChanged.addListener(function (value, rawSuggest) {
+    listener(value, function (suggests) {
+      rawSuggest(suggests.map(function (suggest) {
+        return suggest.asSuggestResult();
+      }));
+    });
+  });
 };
 
 /**
@@ -716,7 +742,7 @@ Chrome.prototype.addOmniboxEnteredListener = function (listener) {
  * Sets the default suggestion in the omnibox.
  */
 Chrome.prototype.setOmniboxDefaultSuggestion = function (value) {
-  chrome.omnibox.setDefaultSuggestion(value);
+  chrome.omnibox.setDefaultSuggestion(value.asDefaultSuggestion());
 };
 
 /**
@@ -745,6 +771,6 @@ Chrome.prototype.updateCurrentTab = function (update) {
   });  
 };
 
-function startMercury() {
-  (new Mercury(new Chrome())).main();
+function installMercury() {
+  (new Mercury(new Chrome())).install();
 }
