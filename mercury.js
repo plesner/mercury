@@ -116,6 +116,7 @@ Match.getOverlapIndices = function (haystack, needle) {
     if (match == -1)
       return []
     mappings[i] = match;
+    cursor = match + 1;
   }
   return mappings;
 };
@@ -240,7 +241,12 @@ Score.create = function (base, input) {
  * A repository of bookmarks that keeps itself updated as the underlying
  * bookmarks change.
  */
-function BookmarkRepository() {
+function BookmarkRepository(chrome) {
+  /**
+   * Access to chrome.
+   */
+  this.chrome = chrome;
+
   /**
    * A list of bookmark objects.
    */
@@ -263,9 +269,7 @@ function BookmarkRepository() {
  * One-time setup to hook this into chrome's bookmark system.
  */
 BookmarkRepository.prototype.initialize = function () {
-  chrome.bookmarks.onChanged.addListener(this.reload.bind(this));
-  chrome.bookmarks.onCreated.addListener(this.reload.bind(this));
-  chrome.bookmarks.onRemoved.addListener(this.reload.bind(this));
+  this.chrome.addBookmarkEventListener(this.reload.bind(this));
   this.reload();
 };
 
@@ -300,7 +304,7 @@ BookmarkRepository.prototype.reload = function () {
   if (this.isReloading)
     return;
   this.isReloading = true;
-  chrome.bookmarks.getTree(this.onFetched.bind(this));
+  this.chrome.getBookmarksTree(this.onFetched.bind(this));
 };
 
 /**
@@ -342,11 +346,16 @@ BookmarkRepository.prototype.addBookmarks = function (node, path) {
 /**
  * Main handler for this extension.
  */
-function Mercury() {
+function Mercury(chrome) {
+  /**
+   * Access to chrome.
+   */
+  this.chrome = chrome;
+  
   /**
    * Repository of bookmarks that keeps itself updated when they change.
    */
-  this.bookmarks = new BookmarkRepository();
+  this.bookmarks = new BookmarkRepository(chrome);
 
   /**
    * The last suggestion we made which we'll use if the user selects the
@@ -373,8 +382,8 @@ Mercury.prototype.getBookmarks = function () {
  * Install ourselves through the appropriate chrome hooks.
  */
 Mercury.prototype.install = function () {
-  chrome.omnibox.onInputChanged.addListener(this.onInputChanged.bind(this));
-  chrome.omnibox.onInputEntered.addListener(this.onInputEntered.bind(this));
+  this.chrome.addOmniboxChangedListener(this.onInputChanged.bind(this));
+  this.chrome.addOmniboxEnteredListener(this.onInputEntered.bind(this));
 };
 
 /**
@@ -383,12 +392,12 @@ Mercury.prototype.install = function () {
 Mercury.prototype.onInputChanged = function (text, suggest) {
   var suggests = this.fetchNextSuggestion(text);
   if (suggests.length > 0) {
-    var bestSuggest = suggests[0];
+    var best = suggests[0];
     var rest = [];
     for (var i = 1; i < suggests.length; i++)
       rest.push(suggests[i].asSuggestResult());
     suggest(rest);
-    chrome.omnibox.setDefaultSuggestion(bestSuggest.asDefaultSuggestion());
+    this.chrome.setOmniboxDefaultSuggestion(best.asDefaultSuggestion());
   }
 };
 
@@ -417,11 +426,7 @@ Mercury.prototype.onInputEntered = function (text) {
     // so we have to grab the url from the last suggestion.
     text = this.lastSuggestions.bestMatch.getUrl();
   }
-  chrome.tabs.getSelected(null, function (tab) {
-    chrome.tabs.update(tab.id, {
-      "url": text
-    });
-  });
+  this.chrome.updateCurrentTab({"url": text});
 };
 
 /**
@@ -501,9 +506,13 @@ function Suggestion(bookmark, text, score) {
 }
 
 /**
- * Returns an escaped description of this suggestion.
+ * Formats the description of this suggestion using the specified formatting
+ * controller function.  The controller is given the parts of the description
+ * and functions that add a piece of the base string and a piece of raw text
+ * to the end result, and is free to use those to construct the result however
+ * it likes.
  */
-Suggestion.prototype.getDescription = function () {
+Suggestion.prototype.formatDescription = function (doFormat) {
   // First make a mapping from base element to matches.
   var matches = this.score.getMatches();
   var mapping = [];
@@ -531,14 +540,40 @@ Suggestion.prototype.getDescription = function () {
       });
     }
   }
-  addPart(path[0], 0);
-  text += " - ";
-  for (var i = path.length - 1; i > 0; i--) {
-    addPart(path[i], i);
-    if (i > 1)
-      text += " / ";
+  function addText(value) {
+    text += value;
   }
+  doFormat(path, addPart, addText);
   return new Markup(text, regions);
+};
+
+/**
+ * Returns a marked up description of this suggestion suitable to be displayed
+ * in the omnibox.
+ */
+Suggestion.prototype.getDescription = function () {
+  return this.formatDescription(function (path, addPart, addText) {
+    addPart(path[0], 0);
+    addText(" - ");
+    for (var i = path.length - 1; i > 0; i--) {
+      addPart(path[i], i);
+      if (i > 1)
+        addText(" / ");
+    }
+  });
+};
+
+/**
+ * Returns a simple description useful for testing.
+ */
+Suggestion.prototype.getSimpleDescription = function () {
+  return this.formatDescription(function (path, addPart, addText) {
+    for (var i = 0; i < path.length; i++) {
+      if (i > 0)
+        addText(" ");
+      addPart(path[i], i);
+    }
+  });
 };
 
 /**
@@ -573,6 +608,13 @@ Suggestion.prototype.asDefaultSuggestion = function () {
   return {
     'description': this.getDescription().toXml()
   };
+};
+
+/**
+ * For debugging.
+ */
+Suggestion.prototype.toString = function () {
+  return "#<a Suggestion: " + this.text + "@" + this.score + ">";
 };
 
 /**
@@ -649,6 +691,60 @@ Markup.prototype.mapParts = function (callback) {
   return result;
 }
 
+/**
+ * Object that encapsulates interactions with chrome.  We use one when
+ * running within chrome and another for testing.
+ */
+function Chrome() { }
+
+/**
+ * Adds a listener that gets notified when the input in the omnibox changes.
+ */
+Chrome.prototype.addOmniboxChangedListener = function (listener) {
+  chrome.omnibox.onInputChanged.addListener(listener);
+};
+
+/**
+ * Adds a listener that gets notified when a value is selected in the
+ * omnibox.
+ */
+Chrome.prototype.addOmniboxEnteredListener = function (listener) {
+  chrome.omnibox.onInputEntered.addListener(listener);
+};
+
+/**
+ * Sets the default suggestion in the omnibox.
+ */
+Chrome.prototype.setOmniboxDefaultSuggestion = function (value) {
+  chrome.omnibox.setDefaultSuggestion(value);
+};
+
+/**
+ * Adds a listener that is notified of all changes to bookmarks.
+ */
+Chrome.prototype.addBookmarkEventListener = function (listener) {
+  chrome.bookmarks.onChanged.addListener(listener);
+  chrome.bookmarks.onCreated.addListener(listener);
+  chrome.bookmarks.onRemoved.addListener(listener);
+};
+
+/**
+ * Starts chrome fetching bookmarks, calling back the given callback when
+ * complete.
+ */
+Chrome.prototype.getBookmarksTree = function (callback) {
+  chrome.bookmarks.getTree(callback);
+};
+
+/**
+ * Schedules the current tab to be updated with the given update.
+ */
+Chrome.prototype.updateCurrentTab = function (update) {
+  chrome.tabs.getSelected(null, function (tab) {
+    chrome.tabs.update(tab.id, update);
+  });  
+};
+
 function startMercury() {
-  (new Mercury()).main();
+  (new Mercury(new Chrome())).main();
 }

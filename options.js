@@ -1,4 +1,4 @@
-var mercury = new Mercury();
+var mercury = new Mercury(new Chrome());
 
 function textKeyUp() {
   var entries = document.getElementById("entries");
