@@ -594,7 +594,7 @@ function Markup(text, regions) {
  * Escape a description so it can be displayed by chrome.
  */
 Markup.escape = function (str) {
-  return str.replace("&", "&amp;");
+  return str.replace(/&/g, "&amp;");
 }
 
 /**
