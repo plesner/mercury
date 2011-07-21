@@ -443,9 +443,10 @@ Mercury.prototype.onInputEntered = function (text) {
     // Looks like the user picked the default suggestion.  In that
     // case we're given the raw input rather than the matching url
     // so we have to grab the url from the last suggestion.
-    text = this.lastSuggestions.bestMatch.getUrl();
+    this.lastSuggestions.defaultSuggestion.execute(this.chrome);
+  } else {
+    this.chrome.updateCurrentTab({"url": text});
   }
-  this.chrome.updateCurrentTab({"url": text});
 };
 
 /**
@@ -466,12 +467,13 @@ function SuggestionRequest(bookmarks, text) {
   /**
    * List of the words in the input.
    */
-  this.text = Bookmark.dropCase(text).split(" ");
+  this.inputs = Parser.parse(text).expand();
   
   /**
-   * The best match, if we've found one.
+   * The default suggection for when the user just presses enter rather than
+   * select an item in the list.
    */
-  this.bestMatch = null;
+  this.defaultAction = null;
 }
 
 /**
@@ -500,25 +502,395 @@ SuggestionRequest.compareCandidates = function (one, two) {
  * match is saved in a field for potential later use.
  */
 SuggestionRequest.prototype.run = function () {
+  if (this.inputs.length == 1) {
+    return this.runSingle(this.inputs[0]);
+  } else  {
+    return this.runMultiple(this.inputs);
+  }
+};
+
+SuggestionRequest.prototype.getAllMatches = function (parts) {
   var matches = [];
   var suggestions = [];
   for (var i = 0; i < this.bookmarks.length; i++) {
     var bookmark = this.bookmarks[i];
-    var score = bookmark.getScore(this.text);
+    var score = bookmark.getScore(parts);
     if (score)
-      matches.push(new Suggestion(bookmark, this.text, score));
+      matches.push(new SingleSuggestion(bookmark, parts, score));
   }
   matches.sort(SuggestionRequest.compareCandidates);
+  return matches;
+}
+
+SuggestionRequest.prototype.runSingle = function (parts) {
+  var matches = this.getAllMatches(parts);
   if (matches.length > 0) {
-    this.bestMatch = matches[0];
+    this.defaultSuggestion = matches[0];
   }
   return matches;
 };
 
+SuggestionRequest.prototype.runMultiple = function (inputList) {
+  var bestMatches = [];
+  inputList.forEach(function (input) {
+    var matches = this.getAllMatches(input);
+    if (matches.length > 0) {
+      bestMatches.push(matches[0]);
+    }
+  }.bind(this));
+  if (bestMatches.length == 0) {
+    return [];
+  } else if (bestMatches.length == 1) {
+    this.defaultSuggestion = bestMatches[0];
+    return bestMatches;
+  } else {
+    this.defaultSuggestion = new CompoundSuggestion(bestMatches);
+    return [this.defaultSuggestion];
+  }
+};
+
+/**
+ * A union of multiple tokens.
+ */
+function ForEach(parts) {
+  /**
+   * The individual parts that make up this conjunction.
+   */
+  this.parts = parts;
+}
+
+/**
+ * Returns a plain-old-JS-object for this value for testing.
+ */
+ForEach.prototype.toPojso = function () {
+  return this.parts.map(function (part) { return part.toPojso(); });
+};
+
+/**
+ * Expands by simply joining together the matches for each of its subparts.
+ */
+ForEach.prototype.expand = function () {
+  var result = [];
+  this.parts.forEach(function (part) {
+    result = result.concat(part.expand());
+  });
+  return result;
+};
+
+/**
+ * Creates a new ForEach for the given set of parts if necessary.  If there is
+ * only one part just returning that part is equivalent.
+ */
+ForEach.create = function (parts) {
+  if (parts.length == 1) {
+    return parts[0];
+  } else {
+    return new ForEach(parts);
+  }
+};
+
+/**
+ * A number of parts in sequence.
+ */
+function Sequence(parts) {
+  /**
+   * The parts that make up this sequence.
+   */
+  this.parts = parts;
+}
+
+/**
+ * Returns a plain-old-JS-object for this value for testing.
+ */
+Sequence.prototype.toPojso = function () {
+  return this.parts.map(function (part) { return part.toPojso(); });
+};
+
+function cloneList(list) {
+  return list.map(function (e) { return e; });
+}
+
+/**
+ * Expands a sequence by successively "multiplying" the current set of
+ * matches with the new sets of submatches.
+ */
+Sequence.prototype.expand = function () {
+  // We start out with a single empty match.
+  var results = [[]];
+  this.parts.forEach(function (part) {
+    // First we expand the part on its own.
+    var expanded = part.expand();
+    var newResults = [];
+    // Then for each element in the previous results...
+    results.forEach(function (result) {
+      // ...we create a copy for each of the subparts matches and add its
+      // matches on the end.
+      expanded.forEach(function (part) {
+        var clone = cloneList(result);
+        newResults.push(clone.concat(part));
+      });
+    });
+    results = newResults;
+  });
+  return results;
+};
+
+/**
+ * Returns a sequence of the given parts.  If there is only one part just
+ * returning that part is equivalent.
+ */
+Sequence.create = function (parts) {
+  if (parts.length == 1) {
+    return parts[0];
+  } else {
+    return new Sequence(parts);
+  }
+};
+
+/**
+ * A match against a single word token.
+ */
+function WordMatch(token) {
+  this.token = token;
+}
+
+/**
+ * Returns a plain-old-JS-object for this value for testing.
+ */
+WordMatch.prototype.toPojso = function () {
+  return this.token;
+};
+
+/**
+ * Returns a list of queries, each of which is itself a list of strings.  In
+ * this case there is a single query which has a single string.
+ */
+WordMatch.prototype.expand = function () {
+  return [[this.token]];
+};
+
+/**
+ * Input string tokenizer.
+ */
+function Scanner(input) {
+  /**
+   * The input string.
+   */
+  this.input = input;
+  
+  /**
+   * How far into the input are we?
+   */
+  this.cursor = 0;
+  
+  this.skipSpaces();
+}
+
+/**
+ * Returns the current character as a string, return the empty string when
+ * there is no more input.
+ */
+Scanner.prototype.getCurrent = function () {
+  return this.input.charAt(this.cursor);
+};
+
+/**
+ * Move ahead to the next character.
+ */
+Scanner.prototype.advance = function () {
+  this.cursor++;
+};
+
+/**
+ * Are there any more characters in this string?
+ */
+Scanner.prototype.hasMore = function () {
+  return this.cursor < this.input.length;
+};
+
+/**
+ * Skips over any space characters.
+ */
+Scanner.prototype.skipSpaces = function () {
+  while (this.hasMore() && Scanner.isSpace(this.getCurrent()))
+    this.advance();
+};
+
+/**
+ * Is this a special delimiter character?
+ */
+Scanner.isDelimiter = function (chr) {
+  return "{},".indexOf(chr) != -1;
+};
+
+Scanner.isSpace = function (chr) {
+  return /\s/.test(chr);
+};
+
+Scanner.isWord = function (chr) {
+  return !Scanner.isDelimiter(chr) && !Scanner.isSpace(chr);
+}
+
+/**
+ * Returns the next token.
+ */
+Scanner.prototype.scanToken = function () {
+  var current = this.getCurrent();
+  if (Scanner.isDelimiter(current)) {
+    this.advance();
+    this.skipSpaces();
+    return current;
+  } else {
+    return this.scanWord();
+  }
+};
+
+/**
+ * Scans and returns the next non-delimiter token.
+ */
+Scanner.prototype.scanWord = function () {
+  var result = "";
+  var current = this.getCurrent();
+  while (this.hasMore() && Scanner.isWord(current)) {
+    result += current;
+    this.advance();
+    current = this.getCurrent();
+  }
+  this.skipSpaces();
+  return result;
+};
+
+/**
+ * Splits the given string into a list of tokens.
+ */
+Scanner.scan = function (str) {
+  var scanner = new Scanner(str);
+  var tokens = [];
+  while (scanner.hasMore()) {
+    var token = scanner.scanToken();
+    tokens.push(Bookmark.dropCase(token));
+  }
+  return tokens;
+};
+
+/**
+ * Parses a list of tokens into an action expression.
+ */
+function Parser(tokens) {
+  /**
+   * The pre-scanned input tokens.
+   */
+  this.tokens = tokens;
+  
+  /**
+   * How far into the tokens are we?
+   */
+  this.cursor = 0;
+}
+
+/**
+ * Returns the current token.
+ */
+Parser.prototype.getCurrent = function () {
+  return this.tokens[this.cursor];
+};
+
+/**
+ * Skip ahead to the next token.
+ */
+Parser.prototype.advance = function () {
+  this.cursor++;
+};
+
+/**
+ * Are there more tokens?
+ */
+Parser.prototype.hasMore = function () {
+  return this.cursor < this.tokens.length;
+};
+
+/**
+ * Parses a toplevel expression.
+ */
+Parser.prototype.parseExpression = function () {
+  return this.parseSequence();
+};
+
+/**
+ * Parses a sequence expression.
+ */
+Parser.prototype.parseSequence = function () {
+  var parts = [];
+  while (this.hasMore()) {
+    var token = this.getCurrent();
+    if (token == "{") {
+      this.advance();
+      parts.push(this.parseForEach());
+    } else if (token == "}" || token == ",") {
+      break;
+    } else {
+      var word = new WordMatch(token);
+      parts.push(word);
+      this.advance();
+    }
+  }
+  return Sequence.create(parts);
+};
+
+/**
+ * Parses a group of the form {a, b, c}.
+ */
+Parser.prototype.parseForEach = function () {
+  var parts = [];
+  while (this.hasMore()) {
+    var current = this.getCurrent();
+    if (current == "}") {
+      this.advance();
+      break;
+    } else {
+      var part = this.parseSequence();
+      parts.push(part);
+      current = this.getCurrent();
+      if (current == ",") {
+        this.advance();
+        continue;
+      } else if (current == "}") {
+        this.advance();
+        break;
+      } else {
+        break;
+      }
+    }
+  }
+  return ForEach.create(parts);
+};
+
+Parser.isDelimiter = function (word) {
+  if (word.length > 1) {
+    return false;
+  } else {
+    switch (word) {
+      case "{": case "}": case ",":
+        return true;
+      default:
+        return false;
+    }
+  }
+}
+
+Parser.parse = function (input) {
+  var tokens = Scanner.scan(input);
+  if (tokens.length == 0) {
+    return null;
+  }
+  var parser = new Parser(tokens);
+  return parser.parseSequence();
+}
+
 /**
  * A single suggested result.
  */
-function Suggestion(bookmark, text, score) {
+function SingleSuggestion(bookmark, text, score) {
   this.bookmark = bookmark;
   this.text = text;
   this.score = score;
@@ -531,7 +903,7 @@ function Suggestion(bookmark, text, score) {
  * to the end result, and is free to use those to construct the result however
  * it likes.
  */
-Suggestion.prototype.formatDescription = function (doFormat) {
+SingleSuggestion.prototype.formatDescription = function (doFormat) {
   // First make a mapping from base element to matches.
   var matches = this.score.getMatches();
   var mapping = [];
@@ -571,7 +943,7 @@ Suggestion.prototype.formatDescription = function (doFormat) {
  * Returns a marked up description of this suggestion suitable to be displayed
  * in the omnibox.
  */
-Suggestion.prototype.getDescription = function () {
+SingleSuggestion.prototype.getDescription = function () {
   return this.formatDescription(function (path, addPart, addText) {
     addPart(path[0], 0);
     addText(" - ");
@@ -586,7 +958,7 @@ Suggestion.prototype.getDescription = function () {
 /**
  * Returns a simple description useful for testing.
  */
-Suggestion.prototype.getSimpleDescription = function () {
+SingleSuggestion.prototype.getSimpleDescription = function () {
   return this.formatDescription(function (path, addPart, addText) {
     for (var i = 0; i < path.length; i++) {
       if (i > 0)
@@ -596,17 +968,23 @@ Suggestion.prototype.getSimpleDescription = function () {
   });
 };
 
+SingleSuggestion.prototype.getTitle = function () {
+  return this.formatDescription(function (path, addPart, addText) {
+    addPart(path[0], 0);
+  });
+}
+
 /**
  * Returns the score vector this suggestion received.
  */
-Suggestion.prototype.getScore = function () {
+SingleSuggestion.prototype.getScore = function () {
   return this.score;
 };
 
 /**
  * Returns the url to go to for this suggestion.
  */
-Suggestion.prototype.getUrl = function () {
+SingleSuggestion.prototype.getUrl = function () {
   return this.bookmark.url;
 };
 
@@ -614,7 +992,7 @@ Suggestion.prototype.getUrl = function () {
  * Returns a suggest result describing this suggestion suitable to be consumed
  * by a suggest callback.
  */
-Suggestion.prototype.asSuggestResult = function () {
+SingleSuggestion.prototype.asSuggestResult = function () {
   return {
     'content': this.getUrl(),
     'description': this.getDescription().toXml()
@@ -624,7 +1002,7 @@ Suggestion.prototype.asSuggestResult = function () {
 /**
  * Returns a default suggestion suitable to be used by the omnibox.
  */
-Suggestion.prototype.asDefaultSuggestion = function () {
+SingleSuggestion.prototype.asDefaultSuggestion = function () {
   return {
     'description': this.getDescription().toXml()
   };
@@ -633,8 +1011,100 @@ Suggestion.prototype.asDefaultSuggestion = function () {
 /**
  * For debugging.
  */
-Suggestion.prototype.toString = function () {
-  return "#<a Suggestion: " + this.text + "@" + this.score + ">";
+SingleSuggestion.prototype.toString = function () {
+  return "#<a SingleSuggestion: " + this.text + "@" + this.score + ">";
+};
+
+/**
+ * Executes the action for when this suggestion is selected.
+ */
+SingleSuggestion.prototype.execute = function (chrome) {
+  chrome.updateCurrentTab({'url': bestMatch.getUrl()});
+};
+
+/**
+ * A suggestion which opens multiple urls in multiple tabs.
+ */
+function CompoundSuggestion(children) {
+  this.children = children;
+}
+
+/**
+ * The score is not well-defined so we just return a dummy value.
+ */
+CompoundSuggestion.prototype.getScore = function () {
+  return "*";
+};
+
+/**
+ * Returns this as a default suggestion.  Compound suggestions don't work as
+ * suggest results.
+ */
+CompoundSuggestion.prototype.asDefaultSuggestion = function () {
+  return {
+    'description': this.getDescription().toXml()
+  };
+};
+
+/**
+ * Returns the description to use of this suggestion.
+ */
+CompoundSuggestion.prototype.getDescription = function () {
+  return new CompoundDescription(this.children);
+};
+
+CompoundSuggestion.prototype.execute = function (chrome) {
+  var urls = this.children.map(function (child) { return child.getUrl(); });
+  // Update the current tab to hold the first of the urls.
+  chrome.updateCurrentTab({'url': urls[0]});
+  chrome.getCurrentTabIndex(function (index) {
+    // The open tabs for the remaining ones.
+    for (var i = urls.length - 1; i > 0; i--) {
+      chrome.openNewTab({
+        'url': urls[i],
+        'index': index + 1,
+        'selected': false
+      });
+    }
+  });
+};
+
+/**
+ * A description which is made up of multiple child descriptions.
+ */
+function CompoundDescription(children) {
+  this.children = children;
+}
+
+CompoundDescription.prototype.formatDescription = function (childFormatter) {
+  var children = this.children;
+  var result = ["Open " + children.length + " tab"];
+  if (children.length > 1)
+     result.push("s");
+  result.push(" with ");
+  children.map(function (child, i) {
+    if (i > 0) {
+      if (i == children.length - 1) {
+        result.push(" and ");
+      } else {
+        result.push(", ");
+      }
+    }
+    result.push(childFormatter(child));
+  });
+  return result.join("");
+};
+
+CompoundDescription.prototype.toString = function () {
+  return this.formatDescription(function (child) {
+    return child.getTitle().toString();
+  });
+};
+
+CompoundDescription.prototype.toXml = function () {
+  return this.formatDescription(function (child) {
+    return child.getTitle().toXml();
+  });
 };
 
 /**
@@ -769,6 +1239,16 @@ Chrome.prototype.updateCurrentTab = function (update) {
   chrome.tabs.getSelected(null, function (tab) {
     chrome.tabs.update(tab.id, update);
   });  
+};
+
+Chrome.prototype.openNewTab = function (properties) {
+  chrome.tabs.create(properties);
+};
+
+Chrome.prototype.getCurrentTabIndex = function (callback) {
+  chrome.tabs.getSelected(null, function (tab) {
+    callback(tab.index);
+  });
 };
 
 function installMercury() {

@@ -3,6 +3,7 @@
   "version": "0.5",
   "description": "QuickSilver-style bookmark navigation",
   "background_page": "background.html",
+  "options_page": "options.html",
   "omnibox": {
     "keyword": "m"
   },

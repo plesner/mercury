@@ -28,27 +28,31 @@ function compareLists(one, two) {
   if (one.length != two.length)
     return false;
   for (var i = 0; i < one.length; i++) {
-    if (one[i] != two[i])
+    var vOne = one[i];
+    var vTwo = two[i];
+    if (Array.isArray(vOne) && Array.isArray(vTwo)) {
+      if (!compareLists(vOne, vTwo))
+        return false;
+    } else if (one[i] != two[i]) {
       return false;
+    }
   }
   return true
 }
 
 function assertListEquals(one, two) {
   if (!compareLists(one, two)) {
-    failComparison(one, two);
+    failComparison(listToString(one), listToString(two));
   }
 }
 
-function compareInnerLists(one, two) {
-  if (one == two)
-    return;
-  assertTrue(one.length == two.length);
-  for (var i = 0; i < one.length; i++) {
-    assertListEquals(one[i], two[i]);
+function listToString(obj) {
+  if (Array.isArray(obj)) {
+    return "[" + obj.map(listToString).join(", ") + "]"
+  } else {
+    return String(obj);
   }
 }
-
 
 function compareScores(a, b) {
   function newMatch(a) { return new Match(0, 0, a); }
@@ -115,23 +119,23 @@ function testGetOverlapIndices() {
 }
 
 function testGetOverlapRegions() {
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "abcdefg"), [[0, 6]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "abcdef"), [[0, 5]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "abcde"), [[0, 4]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "abde"), [[0, 1], [3, 4]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "a"), [[0, 0]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "cd"), [[2, 3]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "fg"), [[5, 6]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "abd"), [[0, 1], [3, 3]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "abe"), [[0, 1], [4, 4]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "acd"), [[0, 0], [2, 3]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "ade"), [[0, 0], [3, 4]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "ag"), [[0, 0], [6, 6]]);
-  compareInnerLists(Match.getOverlapRegions("abcdefg", "x"), []);
-  compareInnerLists(Match.getOverlapRegions("mmmm", "m"), [[0, 0]]);
-  compareInnerLists(Match.getOverlapRegions("mmmm", "mm"), [[0, 1]]);
-  compareInnerLists(Match.getOverlapRegions("mmmm", "mmm"), [[0, 2]]);
-  compareInnerLists(Match.getOverlapRegions("mmmm", "mmmm"), [[0, 3]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "abcdefg"), [[0, 6]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "abcdef"), [[0, 5]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "abcde"), [[0, 4]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "abde"), [[0, 1], [3, 4]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "a"), [[0, 0]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "cd"), [[2, 3]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "fg"), [[5, 6]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "abd"), [[0, 1], [3, 3]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "abe"), [[0, 1], [4, 4]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "acd"), [[0, 0], [2, 3]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "ade"), [[0, 0], [3, 4]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "ag"), [[0, 0], [6, 6]]);
+  assertListEquals(Match.getOverlapRegions("abcdefg", "x"), []);
+  assertListEquals(Match.getOverlapRegions("mmmm", "m"), [[0, 0]]);
+  assertListEquals(Match.getOverlapRegions("mmmm", "mm"), [[0, 1]]);
+  assertListEquals(Match.getOverlapRegions("mmmm", "mmm"), [[0, 2]]);
+  assertListEquals(Match.getOverlapRegions("mmmm", "mmmm"), [[0, 3]]);
 }
 
 /**
@@ -154,6 +158,64 @@ function testSimpleMatch() {
   assertEquals(getMatchString("foo fox", "fo fx"), "[fo]o [f]o[x]");
   assertEquals(getMatchString("foo bar baz", "ar az"), "foo b[ar] b[az]");
   assertEquals(getMatchString("summary", "summ"), "[summ]ary");
+}
+
+function runScannerTest(input, expected) {
+  var tokens = Scanner.scan(input);
+  var expectedTokens = expected.map(Bookmark.dropCase);
+  assertListEquals(expectedTokens, tokens);
+}
+
+function testScanner() {
+  runScannerTest("", []);
+  runScannerTest(" ", []);
+  runScannerTest("foo bar baz", ["foo", "bar", "baz"]);
+  runScannerTest(" foo  bar  baz ", ["foo", "bar", "baz"]);
+  runScannerTest("  foo   bar   baz  ", ["foo", "bar", "baz"]);
+  runScannerTest("{a}{b}", ["{", "a", "}", "{", "b", "}"])
+  runScannerTest(" { a } { b } ", ["{", "a", "}", "{", "b", "}"])
+  runScannerTest("{{a}{b}}", ["{", "{", "a", "}", "{", "b", "}", "}"])
+  runScannerTest("foo{,}bar", ["foo", "{", ",", "}", "bar"])
+}
+
+function mapRecursive(obj, fun) {
+  if (Array.isArray(obj)) {
+    return obj.map(function (elm) {
+      return mapRecursive(elm, fun);
+    });
+  } else {
+    return fun(obj);
+  }
+}
+
+function runParserTest(input, expected) {
+  var parsed = Parser.parse(input);
+  var expectedTree = mapRecursive(expected, Bookmark.dropCase);
+  assertListEquals(expectedTree, parsed.toPojso());
+}
+
+function testParserGrouping() {
+  runParserTest("foo bar baz", ["foo", "bar", "baz"]);
+  runParserTest("foo", ["foo"]);
+  runParserTest("foo {bar baz}", ["foo", ["bar", "baz"]]);
+  runParserTest("foo {bar, baz}", ["foo", ["bar", "baz"]]);
+  runParserTest("foo {bar baz, quux}", ["foo", [["bar", "baz"], "quux"]]);
+  runParserTest("foo {bar {baz}}", ["foo", ["bar", ["baz"]]]);
+  runParserTest("foo {bar {baz} quux}", ["foo", ["bar", ["baz"], "quux"]]);
+  runParserTest("foo {bar {baz, zoom} quux}", ["foo", ["bar", ["baz", "zoom"], "quux"]]);
+}
+
+function runExpansionTest(input, expected) {
+  var parsed = Parser.parse(input);
+  var expectedTree = mapRecursive(expected, Bookmark.dropCase);
+  assertListEquals(expectedTree, parsed.expand());
+}
+
+function testParserExpansion() {
+  runExpansionTest("foo", [["foo"]]);
+  runExpansionTest("foo bar baz", [["foo", "bar", "baz"]]);
+  runExpansionTest("foo {bar, baz}", [["foo", "bar"], ["foo", "baz"]]);
+  runExpansionTest("{a, b} {c, d}", [["a", "c"], ["a", "d"], ["b", "c"], ["b", "d"]]);
 }
 
 /**
