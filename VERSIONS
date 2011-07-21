@@ -1,5 +1,19 @@
+2011-07-22  0.7
+    Fixed single expansion being broken.  D'oh!
+
+
+2011-07-21  0.6
+
+    Fixed bug when the same character is repeated.
+    
+    Added shell-style group expansion.
+    
+    Added variable expansion.
+
+
 2011-07-20  0.5
     Fixed an escaping bug.
+
 
 2011-07-20  0.4
     Cleaned up the code considerably.

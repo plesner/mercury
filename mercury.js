@@ -1090,7 +1090,7 @@ SingleSuggestion.prototype.toString = function () {
  * Executes the action for when this suggestion is selected.
  */
 SingleSuggestion.prototype.execute = function (chrome) {
-  chrome.updateCurrentTab({'url': bestMatch.getUrl()});
+  chrome.updateCurrentTab({'url': this.getUrl()});
 };
 
 /**
