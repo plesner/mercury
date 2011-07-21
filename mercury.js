@@ -68,6 +68,20 @@ Bookmark.prototype.getTitle = function () {
 };
 
 /**
+ * Returns the title of this bookmark.
+ */
+Bookmark.prototype.getTitleNoCase = function () {
+  return this.pathNoCase[0];
+};
+
+/**
+ * Returns this bookmark's url.
+ */
+Bookmark.prototype.getUrl = function () {
+  return this.url;
+};
+
+/**
  * A single match between the input and a base, along with a score showing
  * the quality of the match.
  */
@@ -467,7 +481,7 @@ function SuggestionRequest(bookmarks, text) {
   /**
    * List of the words in the input.
    */
-  this.inputs = Parser.parse(text).expand();
+  this.inputs = Parser.parse(text).expand(bookmarks);
   
   /**
    * The default suggection for when the user just presses enter rather than
@@ -569,10 +583,10 @@ ForEach.prototype.toPojso = function () {
 /**
  * Expands by simply joining together the matches for each of its subparts.
  */
-ForEach.prototype.expand = function () {
+ForEach.prototype.expand = function (bookmarks) {
   var result = [];
   this.parts.forEach(function (part) {
-    result = result.concat(part.expand());
+    result = result.concat(part.expand(bookmarks));
   });
   return result;
 };
@@ -614,12 +628,12 @@ function cloneList(list) {
  * Expands a sequence by successively "multiplying" the current set of
  * matches with the new sets of submatches.
  */
-Sequence.prototype.expand = function () {
+Sequence.prototype.expand = function (bookmarks) {
   // We start out with a single empty match.
   var results = [[]];
   this.parts.forEach(function (part) {
     // First we expand the part on its own.
-    var expanded = part.expand();
+    var expanded = part.expand(bookmarks);
     var newResults = [];
     // Then for each element in the previous results...
     results.forEach(function (result) {
@@ -667,6 +681,63 @@ WordMatch.prototype.toPojso = function () {
  */
 WordMatch.prototype.expand = function () {
   return [[this.token]];
+};
+
+/**
+ * A variable that resolves to the value of another bookmark.
+ */
+function Variable(name) {
+  this.name = name;
+}
+
+/**
+ * Creates a variable object or, if the name would not work for a variable,
+ * a word match.
+ */
+Variable.create = function (name) {
+  if (!name) {
+    return new WordMatch("$");
+  } else {
+    return new Variable(name);
+  }
+}
+
+Variable.prototype.toPojso = function () {
+  return ["$", this.name];
+};
+
+Variable.parseUrl = function (url) {
+  var match = /set:\/\/(.*)/i.exec(url);
+  if (!match) {
+    return null;
+  } else {
+    var parts = match[1].split("/");
+    var result = [];
+    parts.forEach(function (part) {
+      if (part)
+        result.push(Bookmark.dropCase(part));
+    });
+    return result;
+  }
+}
+
+Variable.prototype.expand = function (bookmarks) {
+  var result = null;
+  var name = this.name;
+  bookmarks.forEach(function (bookmark) {
+    if (bookmark.getTitleNoCase() == name)
+      result = bookmark;
+  });
+  if (result == null) {
+    return [["$" + this.name]];
+  } else {
+    var values = Variable.parseUrl(result.getUrl());
+    if (values == null) {
+      return [["$" + this.name]];
+    } else {
+      return values.map(function (value) { return [value]});
+    }
+  }
 };
 
 /**
@@ -720,7 +791,7 @@ Scanner.prototype.skipSpaces = function () {
  * Is this a special delimiter character?
  */
 Scanner.isDelimiter = function (chr) {
-  return "{},".indexOf(chr) != -1;
+  return "{},$".indexOf(chr) != -1;
 };
 
 Scanner.isSpace = function (chr) {
@@ -826,6 +897,11 @@ Parser.prototype.parseSequence = function () {
     if (token == "{") {
       this.advance();
       parts.push(this.parseForEach());
+    } else if (token == "$") {
+      this.advance();
+      var name = this.getCurrent();
+      parts.push(Variable.create(name));
+      this.advance();
     } else if (token == "}" || token == ",") {
       break;
     } else {
@@ -869,12 +945,7 @@ Parser.isDelimiter = function (word) {
   if (word.length > 1) {
     return false;
   } else {
-    switch (word) {
-      case "{": case "}": case ",":
-        return true;
-      default:
-        return false;
-    }
+    return Scanner.isDelimiter(word);
   }
 }
 
@@ -985,7 +1056,7 @@ SingleSuggestion.prototype.getScore = function () {
  * Returns the url to go to for this suggestion.
  */
 SingleSuggestion.prototype.getUrl = function () {
-  return this.bookmark.url;
+  return this.bookmark.getUrl();
 };
 
 /**
@@ -1058,7 +1129,8 @@ CompoundSuggestion.prototype.execute = function (chrome) {
   // Update the current tab to hold the first of the urls.
   chrome.updateCurrentTab({'url': urls[0]});
   chrome.getCurrentTabIndex(function (index) {
-    // The open tabs for the remaining ones.
+    // Then open tabs for the remaining ones.  We do it in reverse order since
+    // each new one will push the older ones further away from the current tab.
     for (var i = urls.length - 1; i > 0; i--) {
       chrome.openNewTab({
         'url': urls[i],

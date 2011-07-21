@@ -175,7 +175,7 @@ function testScanner() {
   runScannerTest("{a}{b}", ["{", "a", "}", "{", "b", "}"])
   runScannerTest(" { a } { b } ", ["{", "a", "}", "{", "b", "}"])
   runScannerTest("{{a}{b}}", ["{", "{", "a", "}", "{", "b", "}", "}"])
-  runScannerTest("foo{,}bar", ["foo", "{", ",", "}", "bar"])
+  runScannerTest("foo{,$}bar", ["foo", "{", ",", "$", "}", "bar"])
 }
 
 function mapRecursive(obj, fun) {
