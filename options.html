@@ -1,12 +1,124 @@
 <html>
   <head>
-    <title>Mercury options</title>
+    <title>Mercury Options</title>
     <script type="text/javascript" src="mercury.js"></script>
     <script type="text/javascript" src="options.js"></script>
+    <style>
+body {
+  font-family: Georgia, serif;
+  color: #444444;
+  margin: 0;
+  background: #f8f8f8;
+}
+.block {
+  background: white;
+  padding-left: 5px;
+  padding-right: 5px;
+  padding-bottom: 5px;
+  border-left: 1px solid #b5c7de;
+  border-right: 1px solid #b5c7de;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+  min-height: 100%;
+}
+h1 {
+  font-family: sans-serif;
+  background: url("icon48.png") no-repeat;
+  padding-left: 50px;
+  padding-top: 4px;
+  color: black;
+}
+h3 {
+  font-family: sans-serif;
+  margin-bottom: 0.5em;
+  padding: 3px;
+  border-top: 1px solid #b5c7de;
+  font-size: 13px;
+  background-color: #ebeff9;
+  color: black;
+}
+
+.setting {
+  margin: 10px;
+  padding: 2px;
+  padding-left: 4px;
+  background-color: #f0f0f0;
+}
+
+.status {
+  float: right;
+  font-size: 11px;
+  margin-top: 4px;
+  margin-right: 4px;
+  color: #aaaaaa;
+}
+
+.caption {
+  margin-left: 3px;
+}
+
+blockquote {
+  font-family: courier;
+  font-size: 12px;
+  color: #0e774a;
+}
+
+code {
+  font-family: courier;
+  font-size: 12px;
+  color: #0e774a;
+}
+
+.expander {
+  float: right;
+  cursor: pointer;
+  color: #0e4a77;
+}
+
+.groupsHelp {
+  display: none;
+}
+    </style>
   </head>
   <body onload="startOptions()">
-    <input type="text" id="text" onkeyup="textKeyUp()"></input>
-    <div id="entries"/>
-    <div id="bookmarks"/>
+    <div class="block">
+    <h1>Mercury Options</h1>
+This page allows you to configure mercury.  Click the question mark in a section title for a description of how the individual options work.
+    <h3>Groups<div class="expander" onclick="expanderClicked('groups')">?</div></h3>
+<span class="groupsHelp">Mercury allows you to open multiple tabs in one operation.  Where a normal operation shows a list of the bookmarks that best match the input string, a group expansion searches for multiple input strings and can open the best match for each in separate tabs.  For instance, when group expansion is enabled this:
+<blockquote>
+so {do, re, mi}
+</blockquote>
+will find the best matches for <code>so do</code>, <code>so re</code> and <code>so mi</code> and open the best match for each in a separate tab.  You can use multiple groups at the same time, so
+<blockquote>
+{o, so} {do, re}  
+</blockquote>
+will expand to <code>o do</code>, <code>o re</code>, <code>so do</code> and <code>so re</code>.</span>
+<div class="setting"><input type="checkbox"><span class="caption">Enable group expansion</span></input><div class="status">unchanged</div></div>
+<span class="groupsHelp">
+If you use group expansion a lot you may sometimes find yourself often using the same groups.  To make that easier mercury supports <i>group variables</i> which lets you define a variable that will be replaced with a group.  For instance, if you often find yourself writing
+<blockquote>
+sv {a, b, c, d, e}
+</blockquote>
+you can simplify this by defining a bookmark, let's call it <i>p</i>, that points to the fake URL
+<blockquote>
+set://a/b/c/d/e/
+</blockquote>
+Now you can just write
+<blockquote>
+sv $p
+</blockquote>
+and you will get the same effect as if you'd written the full expression above.
+</span>
+<div class="setting"><input type="checkbox"><span class="caption">Enable group variables</span></input><div class="status">unchanged</div></div>
+<span class="groupsHelp">Yes, the <code>set://...</code> syntax is weird but it's there to play nice with the bookmark manager.</span>
+
+<!--
+<h3>Bookmark generation</h3>
+If you have many bookmarks that point to similar URLs mercury can simplify this by generating them from a common template.  The box below allows you to add those templates.
+<div class="setting"><input type="checkbox"><span class="caption">Enable bookmark generation</span></input><div class="status">unchanged</div></div>
+-->
+    </div>
   </body>
 </html>
