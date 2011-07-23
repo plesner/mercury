@@ -25,6 +25,8 @@ function failComparison(a, b) {
 function compareLists(one, two) {
   if (one == two)
     return true;
+  if (Array.isArray(one) != Array.isArray(two))
+    return false;
   if (one.length != two.length)
     return false;
   for (var i = 0; i < one.length; i++) {
@@ -54,88 +56,63 @@ function listToString(obj) {
   }
 }
 
-function compareScores(a, b) {
-  function newMatch(a) { return new Match(0, 0, a); }
-  return new Score(a.map(newMatch)).compareTo(new Score(b.map(newMatch)));
-}
-
-function testCompareScores() {
-  assertTrue(compareScores([1, 1], [1, 1]) == 0);
-  assertTrue(compareScores([0, 1], [1, 1]) < 0);
-  assertTrue(compareScores([1, 1], [0, 1]) > 0);
-  assertTrue(compareScores([1, 0], [1, 1]) < 0);
-  assertTrue(compareScores([1, 1], [1, 0]) > 0);
-  assertTrue(compareScores([1, 2], [1, 1]) > 0);
-}
-
-function scoreVectors(a, b) {
-  var score = Score.create(a.split(" "), b.split(" "));
+function getMatchRanges(a, b) {
+  var score = Score.create(a, b);
   if (score == null) {
     return null;
   } else {
-    return score.matches.map(function (m) { return m.score; });
+    return score.getMatches()
   }
 }
 
-function testScoreCreate() {
-  assertListEquals(scoreVectors("foo bar baz", "ar az"), [2, 2]);
-  assertListEquals(scoreVectors("foo bar baz", "az"), [3]);
-  assertListEquals(scoreVectors("foo bar baz", "foo bar baz"), [0, 0, 0]);
-  assertListEquals(scoreVectors("foo foo", "foo"), [0]);
-  assertListEquals(scoreVectors("foo bar baz", "xxx"), null);
+function testMatchRanges() {
+  assertListEquals(getMatchRanges("foo bar baz", "ar az"), [[5, 7], [9, 10]]);
+  assertListEquals(getMatchRanges("foo bar baz", "az"), [[9, 10]]);
+  assertListEquals(getMatchRanges("foo bar baz", "foo bar baz"), [[0, 10]]);
+  assertListEquals(getMatchRanges("foo foo", "foo"), [[0, 2]]);
+  assertListEquals(getMatchRanges("foo bar baz", "xxx"), null);
+  assertListEquals(getMatchRanges("abcdefg", "abcdefg"), [[0, 6]]);
+  assertListEquals(getMatchRanges("abcdefg", "abcdef"), [[0, 5]]);
+  assertListEquals(getMatchRanges("abcdefg", "abcde"), [[0, 4]]);
+  assertListEquals(getMatchRanges("abcdefg", "abde"), [[0, 1], [3, 4]]);
+  assertListEquals(getMatchRanges("abcdefg", "a"), [[0, 0]]);
+  assertListEquals(getMatchRanges("abcdefg", "cd"), [[2, 3]]);
+  assertListEquals(getMatchRanges("abcdefg", "fg"), [[5, 6]]);
+  assertListEquals(getMatchRanges("abcdefg", "abd"), [[0, 1], [3, 3]]);
+  assertListEquals(getMatchRanges("abcdefg", "abe"), [[0, 1], [4, 4]]);
+  assertListEquals(getMatchRanges("abcdefg", "acd"), [[0, 0], [2, 3]]);
+  assertListEquals(getMatchRanges("abcdefg", "ade"), [[0, 0], [3, 4]]);
+  assertListEquals(getMatchRanges("abcdefg", "ag"), [[0, 0], [6, 6]]);
+  assertListEquals(getMatchRanges("abcdefg", "x"), null);
+  assertListEquals(getMatchRanges("mmmm", "m"), [[0, 0]]);
+  assertListEquals(getMatchRanges("mmmm", "mm"), [[0, 1]]);
+  assertListEquals(getMatchRanges("mmmm", "mmm"), [[0, 2]]);
+  assertListEquals(getMatchRanges("mmmm", "mmmm"), [[0, 3]]);
 }
 
-function testGetScore() {
-  assertTrue(Match.getScore("abcdefg", "abcdefg") == 0);
-  assertTrue(Match.getScore("abcdefg", "abcdef") == 1);
-  assertTrue(Match.getScore("abcdefg", "abcde") == 1);
-  assertTrue(Match.getScore("abcdefg", "a") == 1);
-  assertTrue(Match.getScore("abcdefg", "abd") == 2);
-  assertTrue(Match.getScore("abcdefg", "abe") == 3);
-  assertTrue(Match.getScore("abcdefg", "acd") == 2);
-  assertTrue(Match.getScore("abcdefg", "ade") == 3);
-  assertTrue(Match.getScore("abcdefg", "ag") == 5);
-  assertTrue(Match.getScore("abcdefg", "x") == -1);
+function getMatchScore(a, b) {
+  var score = Score.create(a, b);
+  if (score == null) {
+    return 0;
+  } else {
+    return score.getScore()
+  }
 }
 
-function testGetOverlapIndices() {
-  assertListEquals(Match.getOverlapIndices("abcdefg", "abcdefg"), [0, 1, 2, 3, 4, 5, 6]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "abcdef"), [0, 1, 2, 3, 4, 5]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "abcde"), [0, 1, 2, 3, 4]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "abde"), [0, 1, 3, 4]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "a"), [0]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "cd"), [2, 3]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "fg"), [5, 6]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "abd"), [0, 1, 3]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "abe"), [0, 1, 4]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "acd"), [0, 2, 3]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "ade"), [0, 3, 4]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "ag"), [0, 6]);
-  assertListEquals(Match.getOverlapIndices("abcdefg", "x"), []);
-  assertListEquals(Match.getOverlapIndices("mmmm", "m"), [0]);
-  assertListEquals(Match.getOverlapIndices("mmmm", "mm"), [0, 1]);
-  assertListEquals(Match.getOverlapIndices("mmmm", "mmm"), [0, 1, 2]);
-  assertListEquals(Match.getOverlapIndices("mmmm", "mmmm"), [0, 1, 2, 3]);
+function testMatchScore() {
+  assertEquals(getMatchScore("abcdefg", "abcdefg"), 1.0);
+  assertTrue(getMatchScore("abcdefg", "abcdef") < getMatchScore("abcdefg", "abcdefg"));
+  assertTrue(getMatchScore("abcdefg", "abcde") < getMatchScore("abcdefg", "abcdef"));
+  assertTrue(getMatchScore("abcdefg", "abcd") < getMatchScore("abcdefg", "abcde"));
+  assertTrue(getMatchScore("abcdefg", "abc") < getMatchScore("abcdefg", "abcd"));
+  assertTrue(getMatchScore("abcdefg", "ab") < getMatchScore("abcdefg", "abc"));
+  assertTrue(getMatchScore("abcdefg", "a") < getMatchScore("abcdefg", "ab"));
+  assertEquals(getMatchScore("ab cd e", "abcde"), 1.0);
+  assertTrue(getMatchScore("abncd e", "abcde") < 1.0);
+  assertEquals(getMatchScore("abcdefg", "x"), 0.0);
 }
 
 function testGetOverlapRegions() {
-  assertListEquals(Match.getOverlapRegions("abcdefg", "abcdefg"), [[0, 6]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "abcdef"), [[0, 5]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "abcde"), [[0, 4]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "abde"), [[0, 1], [3, 4]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "a"), [[0, 0]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "cd"), [[2, 3]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "fg"), [[5, 6]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "abd"), [[0, 1], [3, 3]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "abe"), [[0, 1], [4, 4]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "acd"), [[0, 0], [2, 3]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "ade"), [[0, 0], [3, 4]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "ag"), [[0, 0], [6, 6]]);
-  assertListEquals(Match.getOverlapRegions("abcdefg", "x"), []);
-  assertListEquals(Match.getOverlapRegions("mmmm", "m"), [[0, 0]]);
-  assertListEquals(Match.getOverlapRegions("mmmm", "mm"), [[0, 1]]);
-  assertListEquals(Match.getOverlapRegions("mmmm", "mmm"), [[0, 2]]);
-  assertListEquals(Match.getOverlapRegions("mmmm", "mmmm"), [[0, 3]]);
 }
 
 /**
@@ -143,9 +120,7 @@ function testGetOverlapRegions() {
  * string of the result.
  */
 function getMatchString(base, input) {
-  var path = base.split(" ");
-  var pathNoCase = path.map(Bookmark.dropCase);
-  var bookmark = new Bookmark(path, pathNoCase, "<url>");
+  var bookmark = new Bookmark([base], "<url>");
   var request = new SuggestionRequest([bookmark], input);
   var matches = request.run();
   assertEquals(1, matches.length);
@@ -154,9 +129,9 @@ function getMatchString(base, input) {
 }
 
 function testSimpleMatch() {
-  assertEquals(getMatchString("foo bar", "f b"), "[f]oo [b]ar");
-  assertEquals(getMatchString("foo fox", "fo fx"), "[fo]o [f]o[x]");
-  assertEquals(getMatchString("foo bar baz", "ar az"), "foo b[ar] b[az]");
+  assertEquals(getMatchString("foo bar", "f b"), "[f]oo[ b]ar");
+  assertEquals(getMatchString("foo fox", "fo fx"), "[fo]o[ f]o[x]");
+  assertEquals(getMatchString("foo bar baz", "ar az"), "foo b[ar ]b[az]");
   assertEquals(getMatchString("summary", "summ"), "[summ]ary");
 }
 
@@ -292,6 +267,7 @@ function getFullMatch(bookmarks, text) {
 
 function testResultCase() {
   assertListEquals(getFullMatch(["FooBar"], "fb"), ["[F]oo[B]ar"]);
+  assertListEquals(getFullMatch(["FooBarBaz"], "fbb"), ["[F]oo[B]ar[B]az"]);
 }
 
 function runSingleTest(fun, name) {

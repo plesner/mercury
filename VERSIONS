@@ -1,3 +1,10 @@
+2011-07-23  0.8
+
+    Changed to the quicksilver matching algorithm.  Much better.
+    
+    More work on the options page.
+
+
 2011-07-22  0.7
     Fixed single expansion being broken.  D'oh!
 

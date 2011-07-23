@@ -1,9 +1,8 @@
 {
   "name": "Mercury",
-  "version": "0.7",
+  "version": "0.8",
   "description": "QuickSilver-style bookmark navigation",
   "background_page": "background.html",
-  "options_page": "options.html",
   "omnibox": {
     "keyword": "m"
   },

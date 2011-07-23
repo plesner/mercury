@@ -33,7 +33,7 @@ function showSuggestions(suggests) {
     div.removeChild(div.childNodes[0]);
   suggests.forEach(function (suggest) {
     var child = document.createElement('div');
-    child.innerText = suggest.getScore() + " - " + suggest.getDescription();
+    child.innerText = suggest.getScore().getScore() + " - " + suggest.getDescription();
     div.appendChild(child);
   });
 }

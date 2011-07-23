@@ -1,17 +1,17 @@
 /**
  * A bookmark with a path (its parents as a list), a title and a target url.
  */
-function Bookmark(path, pathNoCase, url) {
+function Bookmark(path, url) {
   /**
    * An ordered list of parent titles, starting at the top of the tree.
    */
   this.path = path;
   
   /**
-   * The same as the 'path' field but with the case cleared.
+   * The title of this bookmark.
    */
-  this.pathNoCase = pathNoCase;
-
+  this.title = path[0];
+  
   /**
    * The URL of this bookmark.
    */
@@ -47,31 +47,17 @@ Bookmark.prototype.getPath = function () {
 };
 
 /**
- * Returns the list of strings that makes up this bookmark's path.
- */
-Bookmark.prototype.getPathNoCase = function () {
-  return this.pathNoCase;
-};
-
-/**
  * Returns a score vector of this bookmark agains the given input.
  */
 Bookmark.prototype.getScore = function (input) {
-  return Score.create(this.pathNoCase, input);
+  return Score.create(this.title, input);
 };
 
 /**
  * Returns the title of this bookmark.
  */
 Bookmark.prototype.getTitle = function () {
-  return this.path[0];
-};
-
-/**
- * Returns the title of this bookmark.
- */
-Bookmark.prototype.getTitleNoCase = function () {
-  return this.pathNoCase[0];
+  return this.title;
 };
 
 /**
@@ -82,134 +68,153 @@ Bookmark.prototype.getUrl = function () {
 };
 
 /**
- * A single match between the input and a base, along with a score showing
- * the quality of the match.
+ * A score we got from comparing two strings.
  */
-function Match(baseIndex, inputIndex, score) {
-  this.baseIndex = baseIndex;
-  this.inputIndex = inputIndex;
+function Score(score, matches) {
+  /**
+   * The score value.
+   */
   this.score = score;
-}
-
-Match.prototype.getBaseIndex = function () {
-  return this.baseIndex;
-};
-
-Match.prototype.getInputIndex = function () {
-  return this.inputIndex;
-};
-
-Match.prototype.compareTo = function (that) {
-  return this.score - that.score;
-};
-
-Match.prototype.getScore = function () {
-  return this.score;
-};
-
-/**
- * Determines if the given needle occurs as a subsequence of the haystack,
- * returning a non-negative value if it does.  The smaller the score the
- * "better" it is, 0 meaning a perfect match.
- */
-Match.getScore = function (haystack, needle) {
-  if (needle.length > haystack.length)
-    return -1;
-  var cursor = 0;
-  var score = 0;
-  for (var i = 0; i < needle.length; i++) {
-    var next = needle[i];
-    var match = haystack.indexOf(next, cursor);
-    if (match == -1)
-      return -1;
-    score += (match - cursor);
-    cursor = match + 1;
-  }
-  if (cursor < haystack.length)
-    score += 1;
-  return score;
-}
-
-/**
- * Returns a mapping from needle characters to haystack characters that
- * identify where the overlap between them is.  This method _must_ work the
- * same way as Match.getScore.
- */
-Match.getOverlapIndices = function (haystack, needle) {
-  if (needle.length > haystack.length)
-    return [];
-  var cursor = 0;
-  var mappings = [];
-  for (var i = 0; i < needle.length; i++) {
-    var next = needle[i];
-    var match = haystack.indexOf(next, cursor);
-    if (match == -1)
-      return []
-    mappings[i] = match;
-    cursor = match + 1;
-  }
-  return mappings;
-};
-
-/**
- * Returns the same data as getOverlapIndices but as a list of overlap
- * regions, a list of pairs of [start, end] points of overlaps.
- */
-Match.getOverlapRegions = function (haystack, needle) {
-  var indices = Match.getOverlapIndices(haystack, needle);
-  var regions = [];
-  var currentStart = -2;
-  var currentEnd = -2;
-  indices.forEach(function (index) {
-    if (index == currentEnd + 1) {
-      currentEnd = index;
-    } else {
-      if (currentStart >= 0) {
-        regions.push([currentStart, currentEnd]);
-      }
-      currentStart = index;
-      currentEnd = index;
-    }
-  });
-  if (currentStart >= 0) {
-    regions.push([currentStart, currentEnd]);
-  }
-  return regions;
-};
-
-/**
- * A vector of matches that scores the input against a base.
- */
-function Score(matches) {
+  
+  /**
+   * An array of match indices.
+   */
   this.matches = matches;
 }
 
 /**
- * Compares two vectors of numbers lexicographically.
- */
-Score.prototype.compareTo = function (that) {
-  for (var i = 0; i < this.matches.length; i++) {
-    var diff = this.matches[i].compareTo(that.matches[i]);
-    if (diff != 0)
-      return diff;
-  }
-  return 0;
-};
-
-/**
- * Returns the list of match objects.
+ * Returns the match ranges of this score.
  */
 Score.prototype.getMatches = function () {
   return this.matches;
 };
 
+Score.prototype.compareTo = function (other) {
+  return other.score - this.score;
+};
+
 /**
- * For debugging.
+ * Returns the score value.
  */
-Score.prototype.toString = function () {
-  return this.matches
-      .map(function (match) { return match.getScore(); })
-      .join(",")
+Score.prototype.getScore = function () {
+  return this.score;
+};
+
+/**
+ * Is the given character a white space?
+ */
+Score.isWhiteSpace = function (chr) {
+  return /\s/.test(chr);
+};
+
+/**
+ * Is the given character in upper case?
+ */
+Score.isUpperCase = function (chr) {
+  return chr.toUpperCase() == chr;
+};
+
+/**
+ * Returns a score between 0 and 1 specifying how good a match the
+ * abbreviation is for the given string.
+ *
+ * A port of the quicksilver string scoring algorithm with a few improvements
+ * to the implementation but not the algorithm.  The original is
+ * scoreForAbbreviation in
+ * http://blacktree-alchemy.googlecode.com/svn/trunk/Crucible/Code/NSString_BLTRExtensions.m.
+ */
+Score.getScoreHelper = function (string, stringNoCase, offset, abbrev, matches) {
+  if (abbrev.length == 0) {
+    // Matching the empty string against anything yields a match but not
+    // a perfect one.
+    return 0.9;
+  } else if (abbrev.length > (string.length - offset)) {
+    // Abbreviation is longer than the string so it definitely can't match.  
+    return 0.0;
+  }
+  // The more of the abbreviation we can match in one block the better, so we
+  // start with the best possible option, everything, and lower our
+  // expectations gradually.
+  for (var i = abbrev.length; i > 0; i--) {
+    var abbrevPart = abbrev.substring(0, i);
+    var matchStartOffset = stringNoCase.indexOf(abbrevPart, offset);
+    if (matchStartOffset == -1) {
+      // We didn't find a match.  Okay, we were too ambitious -- retry with
+      // the next smaller substring.
+      continue;
+    }
+    var matchEndOffset = matchStartOffset + i;
+    var nextAbbrev = abbrev.substring(i);
+    // Score the remaining abbreviation in the rest of the string.  If it
+    // doesn't match then there's no reason to do the extra work associated
+    // with scoring and recording a match.
+    var remainingScore = Score.getScoreHelper(string, stringNoCase,
+        matchEndOffset, nextAbbrev, matches);
+    if (remainingScore == 0.0) {
+      // We found a match but the rest didn't.  So again we have to retry
+      // with a smaller substring.
+      continue;
+    }
+    // We're going to score the result by giving each character this substring
+    // is responsible for (matching or skipping) a value and then dividing the
+    // result by how big a fraction of the whole string those characters are.
+    // We start out by giving each character a penalty of 0 and then working
+    // from there.
+    var penalty = 0;
+    // If we skipped some letters then we'll probably want to penalize those
+    // characters but we have to check if there are any skipped character
+    // we want to allow with a lower penalty.
+    if (matchStartOffset > offset) {
+      if (Score.isWhiteSpace(string.charAt(matchStartOffset - 1))) {
+        // The character preceding the match is a whitespace, which is fine;
+        // abbreviations can match multiple words.  But we'll still penalize
+        // any non-witespace characters a bit, and any other spaces will be
+        // penalized fully because they mean we've skipped whole words.
+        for (var j = matchStartOffset - 2; j >= offset; j--) {
+          penalty += Score.isWhiteSpace(string.charAt(j)) ? 1.0 : 0.15;
+        }
+      } else if (Score.isUpperCase(string.charAt(matchStartOffset))) {
+        // The first character of the match is in upper case.  That's fine,
+        // abbreviations or start letters are often in upper case, but any
+        // other letters we've skipped will be penalized a little and any
+        // other upper case letters we've skipped will get the full penalty
+        // because we've skipped previous abbreviation or camel case words.
+        for (var j = matchStartOffset - 1; j >= offset; j--) {
+          penalty += Score.isUpperCase(string.charAt(j)) ? 1.0 : 0.15;
+        }
+      } else {
+        // There's nothing special so just penalize all skipped characters
+        // to the full extent of the law.
+        penalty += matchStartOffset - offset;
+      }
+    }
+    // If there is a matches list we push the current match.  Doing this after
+    // the recursive call means that the list will be reversed, but it is
+    // cheaper to wait until we're sure there is a match.
+    if (matches) {
+      matches.push([matchStartOffset, matchEndOffset - 1]);
+    }
+    // Starting from each character getting 1.0 and then subtracting the
+    // penalty we get the summed points for this match's substring.
+    var partPoints = (matchEndOffset - offset) - penalty;
+    // Then multiplying the remaining score with the remaining length of the
+    // string we get the summed points for the rest of the string.
+    var remainingPoints = remainingScore * (string.length - matchEndOffset);
+    // Then the score is the sum of all the points divided by the number
+    // of characters in all the string we've matched against.
+    return (partPoints + remainingPoints) / (string.length - offset);
+  }
+  return 0.0;
+};
+
+/**
+ * Calculates the score between 0.0 and 1.0 of how well the given abbreviation
+ * matches the given string.  If an array of matches is given the points where
+ * the match was found will be pushed onto the array in reverse order.
+ */
+Score.getScore = function (string, abbrev, matchesOpt) {
+  return Score.getScoreHelper(string, Bookmark.dropCase(string), 0,
+      Bookmark.dropCase(abbrev), matchesOpt);
 };
 
 /**
@@ -224,48 +229,14 @@ Score.prototype.toString = function () {
  * where the matching strings occur.
  */
 Score.create = function (base, input) {
-  // Input is smaller than what we're matching it against.  Fail.
-  if (base.length < input.length) {
-    return null;
-  }
-  // Where was the first match of the last input token?
-  var baseCursor = 0;
   var matches = [];
-  // For each word in the input find the best match in the base.
-  for (var i = 0; i < input.length; i++) {
-    // Did anything match?
-    var foundOne = false;
-    // At which index was the first match of this token?
-    var minMatch = Infinity;
-    for (var j = baseCursor; j < base.length; j++) {
-      var plainDist = Match.getScore(base[j], input[i]);
-      if (plainDist >= 0) {
-        // We have found a match.
-        foundOne = true;
-        // We penalize a match the further the words are apart.
-        var newDist = plainDist + (j - i);
-        matches.push(new Match(j, i, newDist));
-        if (j < minMatch)
-          minMatch = j;
-      }
-    }
-    if (!foundOne) {
-      return null;
-    }
-    baseCursor = minMatch + 1;
+  var score = Score.getScore(base, input, matches);
+  if (score == 0.0) {
+    return null;
+  } else {
+    return new Score(score, matches.reverse())
   }
-  // Scan through the result and find the matching that occur earliest in the
-  // input.
-  var result = [];
-  var next = 0;
-  for (var i = 0; i < matches.length; i++) {
-    if (matches[i].getInputIndex() == next) {
-      result.push(matches[i]);
-      next++;
-    }
-  }
-  return new Score(result);
-}
+};
 
 /**
  * A repository of bookmarks that keeps itself updated as the underlying
@@ -343,7 +314,7 @@ BookmarkRepository.prototype.reload = function () {
 BookmarkRepository.prototype.onFetched = function (tree) {
   this.bookmarks = [];
   for (var i = 0; i < tree.length; i++) {
-    this.addBookmarks(tree[i], [], []);
+    this.addBookmarks(tree[i], []);
   }
   this.isReloading = false;
   this.notifyChangeListeners();
@@ -358,28 +329,25 @@ var kTitleBlacklist = [
 /**
  * Add the given bookmark tree node to the repository.
  */
-BookmarkRepository.prototype.addBookmarks = function (node, path, pathNoCase) {
+BookmarkRepository.prototype.addBookmarks = function (node, path) {
   var url = node.url;
   var title = node.title;
   var titleNoCase = Bookmark.dropCase(title);
   var newPath = [];
-  var newPathNoCase = [];
   if (kTitleBlacklist.indexOf(titleNoCase) == -1) {
     newPath.push(title);
-    newPathNoCase.push(titleNoCase);
   }
   for (var i = 0; i < path.length; i++) {
     newPath.push(path[i]);
-    newPathNoCase.push(pathNoCase[i]);
   }
   if (url) {
     // We're at a bookmark, add it to the list.
-    this.bookmarks.push(new Bookmark(newPath, newPathNoCase, url));
+    this.bookmarks.push(new Bookmark(newPath, url));
   } else {
     // We're at a folder, recursively add bookmarks.
     var children = node.children;
     for (var i = 0; i < children.length; i++)
-      this.addBookmarks(children[i], newPath, newPathNoCase);
+      this.addBookmarks(children[i], newPath);
   }
 };
 
@@ -481,7 +449,8 @@ function SuggestionRequest(bookmarks, text) {
   /**
    * List of the words in the input.
    */
-  this.inputs = Parser.parse(text).expand(bookmarks);
+  var inputLists = Parser.parse(text).expand(bookmarks);
+  this.inputs = inputLists.map(function (list) { return list.join(" "); });
   
   /**
    * The default suggection for when the user just presses enter rather than
@@ -725,7 +694,7 @@ Variable.prototype.expand = function (bookmarks) {
   var result = null;
   var name = this.name;
   bookmarks.forEach(function (bookmark) {
-    if (bookmark.getTitleNoCase() == name)
+    if (Bookmark.dropCase(bookmark.getTitle()) == name)
       result = bookmark;
   });
   if (result == null) {
@@ -976,37 +945,22 @@ function SingleSuggestion(bookmark, text, score) {
  */
 SingleSuggestion.prototype.formatDescription = function (doFormat) {
   // First make a mapping from base element to matches.
-  var matches = this.score.getMatches();
-  var mapping = [];
-  matches.forEach(function (match) {
-    mapping[match.getBaseIndex()] = match;
-  });
   var text = "";
   var regions = [];
-  var path = this.bookmark.getPath();
   var self = this;
   // Appends the given string which appears in the base at the given index to
   // the text, updating the regions appropriately.
-  function addPart(part, i) {
-    var match = mapping[i];
-    var startOffset = text.length;
-    text += part;
-    // There was a match on this part of the input so we have to highlight
-    // the overlap.
-    if (match != null) {
-      var inputPart = self.text[match.getInputIndex()];
-      var partNoCase = Bookmark.dropCase(part);
-      Match.getOverlapRegions(partNoCase, inputPart).forEach(function (region) {
-        var start = region[0] + startOffset;
-        var end = region[1] + startOffset;
-        regions.push([start, end])
-      });
-    }
+  function addTitle() {
+    var offset = text.length;
+    self.score.getMatches().forEach(function (match) {
+      regions.push([offset + match[0], offset + match[1]]);
+    });
+    text += self.bookmark.getTitle();
   }
   function addText(value) {
     text += value;
   }
-  doFormat(path, addPart, addText);
+  doFormat(this.bookmark.getPath(), addTitle, addText);
   return new Markup(text, regions);
 };
 
@@ -1015,11 +969,11 @@ SingleSuggestion.prototype.formatDescription = function (doFormat) {
  * in the omnibox.
  */
 SingleSuggestion.prototype.getDescription = function () {
-  return this.formatDescription(function (path, addPart, addText) {
-    addPart(path[0], 0);
+  return this.formatDescription(function (path, addTitle, addText) {
+    addTitle();
     addText(" - ");
     for (var i = path.length - 1; i > 0; i--) {
-      addPart(path[i], i);
+      addText(path[i]);
       if (i > 1)
         addText(" / ");
     }
@@ -1030,18 +984,16 @@ SingleSuggestion.prototype.getDescription = function () {
  * Returns a simple description useful for testing.
  */
 SingleSuggestion.prototype.getSimpleDescription = function () {
-  return this.formatDescription(function (path, addPart, addText) {
-    for (var i = 0; i < path.length; i++) {
-      if (i > 0)
-        addText(" ");
-      addPart(path[i], i);
-    }
+  return this.formatDescription(function (path, addTitle, addText) {
+    addTitle();
+    for (var i = 1; i < path.length; i++)
+      addText(" " + path[i]);
   });
 };
 
 SingleSuggestion.prototype.getTitle = function () {
-  return this.formatDescription(function (path, addPart, addText) {
-    addPart(path[0], 0);
+  return this.formatDescription(function (path, addTitle, addText) {
+    addTitle();
   });
 }
 

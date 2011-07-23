@@ -76,8 +76,13 @@ code {
   color: #0e4a77;
 }
 
-.groupsHelp {
+.groupsHelp, .debugHelp {
   display: none;
+}
+
+.debug {
+  font-family: sans-serif;
+  font-size: 10px;
 }
     </style>
   </head>
@@ -113,7 +118,15 @@ and you will get the same effect as if you'd written the full expression above.
 </span>
 <div class="setting"><input type="checkbox"><span class="caption">Enable group variables</span></input><div class="status">unchanged</div></div>
 <span class="groupsHelp">Yes, the <code>set://...</code> syntax is weird but it's there to play nice with the bookmark manager.</span>
+<h3>Debugging<div class="expander" onclick="expanderClicked('debug')">?</div></h3>
+<span class="debugHelp">This section has various tools to aid debugging of mercury.
+  
+<div class="debug">
+  <input type="text" id="text" onkeyup="textKeyUp()"></input>
+  <div id="entries"/>
+</div>
 
+</span>
 <!--
 <h3>Bookmark generation</h3>
 If you have many bookmarks that point to similar URLs mercury can simplify this by generating them from a common template.  The box below allows you to add those templates.
