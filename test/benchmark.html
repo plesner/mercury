@@ -3,8 +3,9 @@
   <script type="text/javascript" src="testdata.js"></script>
   <script type="text/javascript" src="shared.js"></script>
   <script type="text/javascript" src="benchmark.js"></script>
-  <body>
-    <a href="javascript:startInstallBenchmark()" style="cursor: pointer">install benchmark</a>
+  <body onload="setupBenchmarkData()">
+    <a href="javascript:startInstallBenchmark()" style="cursor: pointer">installation</a>
+    <a href="javascript:startSearchBenchmark()" style="cursor: pointer">search</a>
     <ul id="steps">
     </ul>
   </body>
