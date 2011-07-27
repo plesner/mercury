@@ -1,21 +1,26 @@
 /**
  * A bookmark with a path (its parents as a list), a title and a target url.
  */
-function Bookmark(path, url) {
-  /**
-   * An ordered list of parent titles, starting at the top of the tree.
-   */
-  this.path = path;
-  
+function Bookmark(title, url, parent) {
   /**
    * The title of this bookmark.
    */
-  this.title = path[0];
+  this.title = title;
+  
+  /**
+   * Cache of the title with case cleared.
+   */
+  this.titleNoCase = null;
   
   /**
    * The URL of this bookmark.
    */
   this.url = url;
+  
+  /**
+   * The folder that contains this bookmark.
+   */
+  this.parent = parent;
 }
 
 Bookmark.dropCase = function (str) {
@@ -43,7 +48,13 @@ Bookmark.prototype.getDescription = function () {
  * Returns the list of strings that makes up this bookmark's path.
  */
 Bookmark.prototype.getPath = function () {
-  return this.path;
+  var result = [];
+  var current = this;
+  while (current != null) {
+    result.push(current.getTitle());
+    current = current.getParent();
+  }
+  return result;
 };
 
 /**
@@ -65,6 +76,42 @@ Bookmark.prototype.getTitle = function () {
  */
 Bookmark.prototype.getUrl = function () {
   return this.url;
+};
+
+/**
+ * Returns the folder containing this bookmark.
+ */
+Bookmark.prototype.getParent = function () {
+  return this.parent;
+}
+
+/**
+ * A bookmark folder, used to retain the structure of the bookmarks.
+ */
+function BookmarkFolder(title, parent) {
+  /**
+   * This folder's title or label.
+   */
+  this.title = title;
+
+  /**
+   * The parent folder, or null for root folders.
+   */
+  this.parent = parent;
+}
+
+/**
+ * Returns this folder's title.
+ */
+BookmarkFolder.prototype.getTitle = function () {
+  return this.title;
+};
+
+/**
+ * Returns this folder's parent, or null if this is a root folder.
+ */
+BookmarkFolder.prototype.getParent = function () {
+  return this.parent;
 };
 
 /**
@@ -314,40 +361,28 @@ BookmarkRepository.prototype.reload = function () {
 BookmarkRepository.prototype.onFetched = function (tree) {
   this.bookmarks = [];
   for (var i = 0; i < tree.length; i++) {
-    this.addBookmarks(tree[i], []);
+    this.addBookmarks(tree[i], null, 0);
   }
   this.isReloading = false;
   this.notifyChangeListeners();
 };
 
-var kTitleBlacklist = [
-  "",
-  Bookmark.dropCase("Bookmarks Bar"),
-  Bookmark.dropCase("Other Bookmarks")
-];
-
 /**
  * Add the given bookmark tree node to the repository.
  */
-BookmarkRepository.prototype.addBookmarks = function (node, path) {
+BookmarkRepository.prototype.addBookmarks = function (node, parent, depth) {
   var url = node.url;
   var title = node.title;
-  var titleNoCase = Bookmark.dropCase(title);
-  var newPath = [];
-  if (kTitleBlacklist.indexOf(titleNoCase) == -1) {
-    newPath.push(title);
-  }
-  for (var i = 0; i < path.length; i++) {
-    newPath.push(path[i]);
-  }
   if (url) {
     // We're at a bookmark, add it to the list.
-    this.bookmarks.push(new Bookmark(newPath, url));
+    this.bookmarks.push(new Bookmark(title, url, parent));
   } else {
+    // We skip folders at level 0 (the root) and 1 (the built-in ones).
+    var newParent = (depth < 2) ? parent : new BookmarkFolder(title, parent);
     // We're at a folder, recursively add bookmarks.
     var children = node.children;
     for (var i = 0; i < children.length; i++)
-      this.addBookmarks(children[i], newPath);
+      this.addBookmarks(children[i], newParent, depth + 1);
   }
 };
 

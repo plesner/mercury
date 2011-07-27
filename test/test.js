@@ -6,12 +6,6 @@ String.prototype.startsWith = function (substr) {
   }
 };
 
-function assertTrue(cond) {
-  if (!cond) {
-    FAIL;
-  }
-}
-
 function assertEquals(a, b) {
   if (a != b) {
     failComparison(a, b);
@@ -120,7 +114,7 @@ function testGetOverlapRegions() {
  * string of the result.
  */
 function getMatchString(base, input) {
-  var bookmark = new Bookmark([base], "<url>");
+  var bookmark = new Bookmark(base, "<url>", null);
   var request = new SuggestionRequest([bookmark], input);
   var matches = request.run();
   assertEquals(1, matches.length);
@@ -192,54 +186,6 @@ function testParserExpansion() {
   runExpansionTest("foo {bar, baz}", [["foo", "bar"], ["foo", "baz"]]);
   runExpansionTest("{a, b} {c, d}", [["a", "c"], ["a", "d"], ["b", "c"], ["b", "d"]]);
 }
-
-/**
- * Fake test implementation of chrome functionality.
- */
-function FakeChrome() {
-  /**
-   * A set of fake bookmarks.
-   */
-  this.bookmarks = [];
-  
-  this.changeListener = null;
-  
-  this.defaultSuggestion = null;
-}
-
-FakeChrome.prototype.addBookmarkEventListener = function (listener) {
-  // ignore for now
-};
-
-FakeChrome.prototype.addOmniboxEnteredListener = function (listener) {
-  // ignore for now
-};
-
-FakeChrome.prototype.getBookmarksTree = function (callback) {
-  callback(this.bookmarks);
-};
-
-FakeChrome.prototype.setOmniboxDefaultSuggestion = function (value) {
-  this.defaultSuggestion = value;
-};
-
-FakeChrome.prototype.addOmniboxChangedListener = function (listener) {
-  assertTrue(this.changeListener == null);
-  this.changeListener = listener;
-};
-
-FakeChrome.prototype.setOmniboxText = function (value) {
-  assertTrue(this.changeListener != null);
-  var suggests = [];
-  this.changeListener(value, function (value) {
-    suggests = value;
-  });
-  return suggests;
-};
-
-FakeChrome.prototype.addBookmark = function (text, url) {
-  this.bookmarks.push({'title': text, 'url': url});
-};
 
 /**
  * Full integration test of the mercury stack, using a mock chrome to input
