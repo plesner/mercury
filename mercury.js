@@ -494,6 +494,16 @@ function SuggestionRequest(bookmarks, text) {
   this.defaultAction = null;
 }
 
+String.prototype.compareTo = function (that) {
+  if (this < that) {
+    return -1;
+  } else if (this > that) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
 /**
  * Compares two candidates, first by score vector and if they're equal
  * alphabetically by URL.
@@ -501,15 +511,7 @@ function SuggestionRequest(bookmarks, text) {
 SuggestionRequest.compareCandidates = function (one, two) {
   var scoreCmp = one.getScore().compareTo(two.getScore());
   if (scoreCmp == 0) {
-    var urlOne = one.getUrl();
-    var urlTwo = two.getUrl();
-    if (urlOne < urlTwo) {
-      return -1;
-    } else if (urlOne > urlTwo) {
-      return 1;
-    } else {
-      return 0;
-    }
+    return one.getBookmarkTitle().compareTo(two.getBookmarkTitle());
   } else {
     return scoreCmp;
   }
@@ -1044,6 +1046,13 @@ SingleSuggestion.prototype.getScore = function () {
  */
 SingleSuggestion.prototype.getUrl = function () {
   return this.bookmark.getUrl();
+};
+
+/**
+ * Returns the raw title of the bookmark.
+ */
+SingleSuggestion.prototype.getBookmarkTitle = function () {
+  return this.bookmark.getTitle();
 };
 
 /**

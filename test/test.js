@@ -200,15 +200,9 @@ function getFullMatch(bookmarks, text) {
   });
   var mercury = new Mercury(chrome);
   mercury.install();
-  var results = [];
-  var suggests = chrome.setOmniboxText(text);
-  if (chrome.defaultSuggestion) {
-    results.push(chrome.defaultSuggestion.getSimpleDescription().toString());
-  }
-  suggests.forEach(function (suggest) {
-    results.push(suggest.getSimpleDescription().toString());
+  return chrome.setOmniboxText(text).map(function (suggestion) {
+    return suggestion.getSimpleDescription().toString();
   });
-  return results;
 }
 
 function testResultCase() {
@@ -216,23 +210,146 @@ function testResultCase() {
   assertListEquals(getFullMatch(["FooBarBaz"], "fbb"), ["[F]oo[B]ar[B]az"]);
 }
 
+/**
+ * Dumb implementation of the scoring function to compare smarter
+ * implementations against.
+ */
+function getScoreDumb(string, stringNoCase, offset, abbrev, matches) {
+  if (abbrev.length == 0) {
+    return 0.9;
+  } else if (abbrev.length > (string.length - offset)) {
+    return 0.0;
+  }
+  for (var i = abbrev.length; i > 0; i--) {
+    var abbrevPart = abbrev.substring(0, i);
+    var matchStartOffset = stringNoCase.indexOf(abbrevPart, offset);
+    if (matchStartOffset == -1) {
+      continue;
+    }
+    var matchEndOffset = matchStartOffset + i;
+    var nextAbbrev = abbrev.substring(i);
+    var remainingScore = getScoreDumb(string, stringNoCase, matchEndOffset,
+        nextAbbrev, matches);
+    if (remainingScore == 0.0) {
+      continue;
+    }
+    var penalty = 0;
+    if (matchStartOffset > offset) {
+      if (Score.isWhiteSpace(string.charAt(matchStartOffset - 1))) {
+        for (var j = matchStartOffset - 2; j >= offset; j--) {
+          penalty += Score.isWhiteSpace(string.charAt(j)) ? 1.0 : 0.15;
+        }
+      } else if (Score.isUpperCase(string.charAt(matchStartOffset))) {
+        for (var j = matchStartOffset - 1; j >= offset; j--) {
+          penalty += Score.isUpperCase(string.charAt(j)) ? 1.0 : 0.15;
+        }
+      } else {
+        penalty += matchStartOffset - offset;
+      }
+    }
+    if (matches) {
+      matches.push([matchStartOffset, matchEndOffset - 1]);
+    }
+    var partPoints = (matchEndOffset - offset) - penalty;
+    var remainingPoints = remainingScore * (string.length - matchEndOffset);
+    return (partPoints + remainingPoints) / (string.length - offset);
+  }
+  return 0.0;
+}
+
+function Match(score, bookmark, markup) {
+  this.score = score;
+  this.bookmark = bookmark;
+  this.markup = markup;
+}
+
+Match.prototype.compareTo = function (that) {
+  if (this.score == that.score) {
+    return this.bookmark.title.compareTo(that.bookmark.title);
+  } else {
+    return that.score - this.score;
+  }
+};
+
+/**
+ * Dumb implementation of string lookup.  We use this implementation as a
+ * reference to compare the smarter implementation that is used in the
+ * extension.
+ */
+function getMatchesDumb(abbrev) {
+  var matches = [];
+  TestData.get().getBookmarks().forEach(function (bookmark) {
+    var title = bookmark.title;
+    var url = bookmark.url;
+    var regions = [];
+    var score = getScoreDumb(title, Bookmark.dropCase(title), 0,
+        Bookmark.dropCase(abbrev), regions);
+    if (score > 0) {
+      matches.push(new Match(score, bookmark, new Markup(title, regions.reverse())));
+    }
+  });
+  matches.sort(function (a, b) { return a.compareTo(b); });
+  return matches;
+}
+
+/**
+ * Returns a subset of the given array but taken from along the whole length
+ * of the array.
+ */
+function getSpreadSlice(array, count) {
+  var result = [];
+  for (var i = 0; i < array.length; i += (array.length / count))
+    result.push(array[i << 0]);
+  return result;
+}
+
+/**
+ * Test that the scoring function works as expected by comparing it with a
+ * dumb test implementation.
+ */
+function testScoring() {
+  var chrome = new FakeChrome();
+  TestData.get().addBookmarks(chrome);
+  var abbrevs = getSpreadSlice(TestData.get().getAbbrevs(), 512);
+  var mercury = new Mercury(chrome);
+  mercury.install();
+  abbrevs.forEach(function (abbrev) {
+    var dumbMatches = getMatchesDumb(abbrev);
+    var expected = dumbMatches.map(function (match) {
+      return match.markup.toString();
+    });
+    var found = chrome.setOmniboxText(abbrev).map(function (suggestion) {
+      return suggestion.getSimpleDescription().toString();
+    });
+    assertListEquals(expected, found);
+  });
+}
+
 function runSingleTest(fun, name) {
   var div = document.createElement('div');
   div.innerText = name;
+  div.style.color = "grey";
   document.body.appendChild(div);
-  try {
-    fun();
-    div.style.color = "green";
-  } catch (e) {
-    div.style.color = "red";
-    div.innerText += " (" + e + ")";
-  }
+  defer(function () {
+    try {
+      fun();
+      div.style.color = "green";
+    } catch (e) {
+      div.style.color = "red";
+      div.innerText += " (" + e + ")";
+    }
+  });
 }
 
 function runMercuryTests() {
+  var tests = [];
   for (prop in this) {
     if (String(prop).startsWith("test")) {
-      runSingleTest(this[prop], prop);
+      tests.push(prop);
     }
   }
+  deferredFor(0, tests.length, function (i) {
+    var prop = tests[i];
+    runSingleTest(this[prop], prop);
+  });
 }
