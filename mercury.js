@@ -55,8 +55,28 @@ Bookmark.prototype.getDescription = function () {
  */
 Bookmark.prototype.getFingerprint = function () {
   if (this.fingerprint == null)
-    this.fingerprint = Bookmark.calcFingerprint(this.titleNoCase);
+    this.fingerprint = Bookmark.calcFingerprint(this.getTitleNoCase());
   return this.fingerprint;
+};
+
+/**
+ * Returns true if the given input fingerprint is a subset of this bookmark's
+ * fingerprint.
+ */
+Bookmark.prototype.matchFingerprint = function (inputPrint) {
+  return (this.getFingerprint() & inputPrint) == inputPrint;
+};
+
+Bookmark.calcFingerprint = function (str) {
+  var fp = 0;
+  for (var i = 0; i < str.length; i++) {
+    var code = str.charCodeAt(i);
+    // To be on the safe side we limit ourselves to 28 bits.  No
+    // JS VM heap allocates 28 bit integers right?
+    var bit = code & 0xFFFFFFF;
+    fp |= (1 << bit);
+  }
+  return fp;
 };
 
 /**
@@ -75,8 +95,12 @@ Bookmark.prototype.getPath = function () {
 /**
  * Returns a score vector of this bookmark agains the given input.
  */
-Bookmark.prototype.getScore = function (inputNoCase) {
-  return Score.create(this.getTitle(), this.getTitleNoCase(), inputNoCase);
+Bookmark.prototype.getScore = function (inputNoCase, inputFingerprint) {
+  if (this.matchFingerprint(inputFingerprint)) {
+    return Score.create(this.getTitle(), this.getTitleNoCase(), inputNoCase);
+  } else {
+    return null;
+  }
 };
 
 /**
@@ -544,9 +568,10 @@ SuggestionRequest.prototype.getAllMatches = function (input) {
   var matches = [];
   var suggestions = [];
   var inputNoCase = Bookmark.dropCase(input);
+  var inputFingerprint = Bookmark.calcFingerprint(inputNoCase);
   for (var i = 0; i < this.bookmarks.length; i++) {
     var bookmark = this.bookmarks[i];
-    var score = bookmark.getScore(inputNoCase);
+    var score = bookmark.getScore(inputNoCase, inputFingerprint);
     if (score)
       matches.push(new SingleSuggestion(bookmark, input, score));
   }
