@@ -4,8 +4,9 @@
   <script type="text/javascript" src="shared.js"></script>
   <script type="text/javascript" src="benchmark.js"></script>
   <body onload="setupBenchmarkData()">
-    <a href="javascript:startInstallBenchmark()" style="cursor: pointer">installation</a>
-    <a href="javascript:startSearchBenchmark()" style="cursor: pointer">search</a>
+    <a href="javascript:benchmark.runInstallBenchmark()" style="cursor: pointer">installation</a>
+    <a href="javascript:benchmark.runSearchBenchmark()" style="cursor: pointer">search</a>
+    <a href="javascript:benchmark.runAllBenchmarks()" style="cursor: pointer">all</a>
     <ul id="steps">
     </ul>
   </body>

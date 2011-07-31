@@ -15,91 +15,48 @@ BenchmarkFakeChrome.prototype.getBookmarksTree = function (callback) {
   this.timeSpentBookmarking += (end - start);
 }
 
-function getTestBookmarks() {
-  var result = [];
-  for (url in top1000Sites) {
-    var value = top1000Sites[url];
-    if (url && value && value.url && value.title)
-      result.push(value);
-  }
-  return result;
+/**
+ * Container object for benchmark data.
+ */
+function Benchmark() {
+  /**
+   * A fake chrome with a large set of fake benchmarks.
+   */
+  this.fakeChrome = new BenchmarkFakeChrome();
+  
+  /**
+   * All abbreviations for fake benchmark titles.
+   */
+  this.allAbbrevs = null;
 }
 
-function addStep(text) {
-  var li = document.createElement("li");
-  li.innerHTML = "<b>" + text + "</b>";
-  document.getElementById("steps").appendChild(li);
-  return li;
-}
-
-function subStep(item, step) {
-  item.innerHTML += " " + step;
-}
-
-function defer(thunk) {
-  window.setTimeout(thunk, 50);
-}
-
-function deferredFor(from, to, thunk) {
-  if (from == to)
-    return;
+Benchmark.prototype.initialize = function () {
+  var step = addStep("Setting up benchmark data...");
+  var self = this;
   defer(function () {
-    thunk(from);
-    deferredFor(from + 1, to, thunk);
-  });
-}
-
-function measure(id, thunk) {
-  var start = new Date();
-  if (kProfile) console.profile(id);
-  thunk();
-  if (kProfile) console.profileEnd(id);
-  var end = new Date();
-  return end - start;
-}
-
-function startInstallBenchmark() {
-  var step = addStep("Running install benchmark...");
-  deferredFor(0, 10, function (i) {
-    var mercury = new Mercury(fakeChrome);
-    mercury.install();
-    fakeChrome.clearListeners();
-    var timeRecorded = fakeChrome.timeSpentBookmarking;
-    fakeChrome.timeSpentBookmarking = 0;
-    subStep(step, timeRecorded);
-  });
-}
-
-function startSearchBenchmark() {
-  var step = addStep("Running search benchmark...");
-  var mercury = new Mercury(fakeChrome);
-  mercury.install();
-  deferredFor(0, 1, function (i) {
-    var duration = measure("search", function () {
-      fakeQueries.forEach(function (query) {
-        fakeChrome.setOmniboxText(query);
-      });
+    self.initBookmarks(step);
+    defer(function () {
+      self.initAbbrevs(step);
     });
-    subStep(step, duration);
   });
-}
-
-function setupFakeBookmarks(chrome) {
-  for (var i = 0; i < 1; i++) {
-    getTestBookmarks().forEach(function (bookmark) {
+};
+ 
+Benchmark.prototype.initBookmarks = function (step) {
+  subStep(step, "bookmarks");
+  var testdata = Benchmark.getTestBookmarks();
+  var chrome = this.fakeChrome;
+  for (var i = 0; i < 10; i++) {
+    testdata.forEach(function (bookmark) {
       chrome.addBookmark(bookmark.title, bookmark.url);
     });
   }
-}
+};
 
-function isWord(str) {
-  return !!(/^\w/.exec(str));
-}
-
-function buildFakeQueries() {
+Benchmark.prototype.initAbbrevs = function (step) {
+  subStep(step, "queries");
   var seen = {};
   var all = [];
-  getTestBookmarks().forEach(function (bookmark) {
+  Benchmark.getTestBookmarks().forEach(function (bookmark) {
     var title = bookmark.title;
     var words = title.split(" ");
     var letters = "";
@@ -116,19 +73,105 @@ function buildFakeQueries() {
       }
     }
   });
-  return all;
+  this.allAbbrevs = all;
 }
 
-var fakeQueries;
-var fakeChrome = new BenchmarkFakeChrome();
-function setupBenchmarkData() {
-  var step = addStep("Setting up benchmark data...");
-  defer(function () {
-    setupFakeBookmarks(fakeChrome);
-    subStep(step, "bookmarks");
+Benchmark.getTestBookmarks = function () {
+  var result = [];
+  for (url in top1000Sites) {
+    var value = top1000Sites[url];
+    if (url && value && value.url && value.title)
+      result.push(value);
+  }
+  return result;
+};
+
+Benchmark.prototype.getAbbrevs = function (countOpt) {
+  if (countOpt) {
+    return this.allAbbrevs.slice(0, countOpt);
+  } else {
+    return this.allAbbrevs;
+  }
+};
+
+function addStep(text) {
+  var li = document.createElement("li");
+  li.innerHTML = "<b>" + text + "</b>";
+  document.getElementById("steps").appendChild(li);
+  return li;
+}
+
+function subStep(item, step) {
+  item.innerHTML += " " + step;
+}
+
+function defer(thunk) {
+  window.setTimeout(thunk, 50);
+}
+
+function deferredFor(from, to, thunk, onDone) {
+  if (from == to) {
+    if (onDone != null)
+      onDone();
+  } else {
     defer(function () {
-      fakeQueries = buildFakeQueries();
-      subStep(step, "queries");
+      thunk(from);
+      deferredFor(from + 1, to, thunk, onDone);
     });
-  });
+  }
+}
+
+function measure(id, thunk) {
+  var start = new Date();
+  if (kProfile) console.profile(id);
+  thunk();
+  if (kProfile) console.profileEnd(id);
+  var end = new Date();
+  return end - start;
+}
+
+Benchmark.prototype.runInstallBenchmark = function (onDone) {
+  var step = addStep("Running install benchmark...");
+  var chrome = this.fakeChrome;
+  deferredFor(0, 10, function (i) {
+    var mercury = new Mercury(chrome);
+    mercury.install();
+    chrome.clearListeners();
+    var timeRecorded = chrome.timeSpentBookmarking;
+    chrome.timeSpentBookmarking = 0;
+    subStep(step, timeRecorded);
+  }, onDone);
+}
+
+Benchmark.prototype.runSearchBenchmark = function (onDone) {
+  var step = addStep("Running search benchmark...");
+  var chrome = this.fakeChrome;
+  var mercury = new Mercury(chrome);
+  mercury.install();
+  var queries = this.getAbbrevs(100);
+  deferredFor(0, 10, function (i) {
+    var duration = measure("search", function () {
+      queries.forEach(function (query) {
+        chrome.setOmniboxText(query);
+      });
+    });
+    subStep(step, duration);
+  }, onDone);
+}
+
+
+Benchmark.prototype.runAllBenchmarks = function () {
+  this.runInstallBenchmark(function () {
+    this.runSearchBenchmark();
+  }.bind(this));
+};
+
+function isWord(str) {
+  return !!(/^\w/.exec(str));
+}
+
+var benchmark = null;
+function setupBenchmarkData() {
+  benchmark = new Benchmark()
+  benchmark.initialize();
 }
