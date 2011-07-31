@@ -51,7 +51,7 @@ function listToString(obj) {
 }
 
 function getMatchRanges(a, b) {
-  var score = Score.create(a, b);
+  var score = Score.create(a, Bookmark.dropCase(a), Bookmark.dropCase(b));
   if (score == null) {
     return null;
   } else {
@@ -85,7 +85,7 @@ function testMatchRanges() {
 }
 
 function getMatchScore(a, b) {
-  var score = Score.create(a, b);
+  var score = Score.create(a, Bookmark.dropCase(a), Bookmark.dropCase(b));
   if (score == null) {
     return 0;
   } else {

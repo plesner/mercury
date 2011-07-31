@@ -21,6 +21,12 @@ function Bookmark(title, url, parent) {
    * The folder that contains this bookmark.
    */
   this.parent = parent;
+  
+  /**
+   * A cache of an int fingerprint that is used for a quick check of
+   * whether this bookmark matches.
+   */
+  this.fingerprint = null;
 }
 
 Bookmark.dropCase = function (str) {
@@ -45,6 +51,15 @@ Bookmark.prototype.getDescription = function () {
 };
 
 /**
+ * Returns this bookmark's fingerprint, calculating it if necessary.
+ */
+Bookmark.prototype.getFingerprint = function () {
+  if (this.fingerprint == null)
+    this.fingerprint = Bookmark.calcFingerprint(this.titleNoCase);
+  return this.fingerprint;
+};
+
+/**
  * Returns the list of strings that makes up this bookmark's path.
  */
 Bookmark.prototype.getPath = function () {
@@ -60,8 +75,8 @@ Bookmark.prototype.getPath = function () {
 /**
  * Returns a score vector of this bookmark agains the given input.
  */
-Bookmark.prototype.getScore = function (input) {
-  return Score.create(this.title, input);
+Bookmark.prototype.getScore = function (inputNoCase) {
+  return Score.create(this.getTitle(), this.getTitleNoCase(), inputNoCase);
 };
 
 /**
@@ -69,6 +84,12 @@ Bookmark.prototype.getScore = function (input) {
  */
 Bookmark.prototype.getTitle = function () {
   return this.title;
+};
+
+Bookmark.prototype.getTitleNoCase = function () {
+  if (this.titleNoCase == null)
+    this.titleNoCase = Bookmark.dropCase(this.title);
+  return this.titleNoCase;
 };
 
 /**
@@ -170,7 +191,7 @@ Score.isUpperCase = function (chr) {
  * scoreForAbbreviation in
  * http://blacktree-alchemy.googlecode.com/svn/trunk/Crucible/Code/NSString_BLTRExtensions.m.
  */
-Score.getScoreHelper = function (string, stringNoCase, offset, abbrev, matches) {
+Score.getScore = function (string, stringNoCase, offset, abbrev, matches) {
   if (abbrev.length == 0) {
     // Matching the empty string against anything yields a match but not
     // a perfect one.
@@ -195,8 +216,8 @@ Score.getScoreHelper = function (string, stringNoCase, offset, abbrev, matches) 
     // Score the remaining abbreviation in the rest of the string.  If it
     // doesn't match then there's no reason to do the extra work associated
     // with scoring and recording a match.
-    var remainingScore = Score.getScoreHelper(string, stringNoCase,
-        matchEndOffset, nextAbbrev, matches);
+    var remainingScore = Score.getScore(string, stringNoCase, matchEndOffset,
+        nextAbbrev, matches);
     if (remainingScore == 0.0) {
       // We found a match but the rest didn't.  So again we have to retry
       // with a smaller substring.
@@ -255,16 +276,6 @@ Score.getScoreHelper = function (string, stringNoCase, offset, abbrev, matches) 
 };
 
 /**
- * Calculates the score between 0.0 and 1.0 of how well the given abbreviation
- * matches the given string.  If an array of matches is given the points where
- * the match was found will be pushed onto the array in reverse order.
- */
-Score.getScore = function (string, abbrev, matchesOpt) {
-  return Score.getScoreHelper(string, Bookmark.dropCase(string), 0,
-      Bookmark.dropCase(abbrev), matchesOpt);
-};
-
-/**
  * Compares two lists of words, returning a list of matches.  If the two lists
  * don't match null is returned.  We do this by basically matching each word
  * in the input with each word in the base.  If any word has no match we bail
@@ -275,9 +286,9 @@ Score.getScore = function (string, abbrev, matchesOpt) {
  * corresponding matching strings, plus 1 for the distance in index between
  * where the matching strings occur.
  */
-Score.create = function (base, input) {
+Score.create = function (base, baseNoCase, inputNoCase) {
   var matches = [];
-  var score = Score.getScore(base, input, matches);
+  var score = Score.getScore(base, baseNoCase, 0, inputNoCase, matches);
   if (score == 0.0) {
     return null;
   } else {
@@ -529,14 +540,15 @@ SuggestionRequest.prototype.run = function () {
   }
 };
 
-SuggestionRequest.prototype.getAllMatches = function (parts) {
+SuggestionRequest.prototype.getAllMatches = function (input) {
   var matches = [];
   var suggestions = [];
+  var inputNoCase = Bookmark.dropCase(input);
   for (var i = 0; i < this.bookmarks.length; i++) {
     var bookmark = this.bookmarks[i];
-    var score = bookmark.getScore(parts);
+    var score = bookmark.getScore(inputNoCase);
     if (score)
-      matches.push(new SingleSuggestion(bookmark, parts, score));
+      matches.push(new SingleSuggestion(bookmark, input, score));
   }
   matches.sort(SuggestionRequest.compareCandidates);
   return matches;
