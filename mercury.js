@@ -24,7 +24,7 @@ function Bookmark(title, url, parent) {
   
   /**
    * A cache of an int fingerprint that is used for a quick check of
-   * whether this bookmark matches.
+   * whether this bookmark could possibly match an input.
    */
   this.fingerprint = null;
 }
@@ -67,13 +67,18 @@ Bookmark.prototype.matchFingerprint = function (inputPrint) {
   return (this.getFingerprint() & inputPrint) == inputPrint;
 };
 
+/**
+ * Calculates the fingerprint of an input string.  The result is an int
+ * such that the bits set in a given string must be a superset of those
+ * set for any substring.
+ */
 Bookmark.calcFingerprint = function (str) {
   var fp = 0;
   for (var i = 0; i < str.length; i++) {
     var code = str.charCodeAt(i);
     // To be on the safe side we limit ourselves to 28 bits.  No
-    // JS VM heap allocates 28 bit integers right?
-    var bit = code & 0xFFFFFFF;
+    // JS VM heap allocates 30 bit integers right?
+    var bit = code & 0x3FFFFFFF;
     fp |= (1 << bit);
   }
   return fp;
@@ -110,6 +115,9 @@ Bookmark.prototype.getTitle = function () {
   return this.title;
 };
 
+/**
+ * Returns the title of this bookmark where case has been cleared.
+ */
 Bookmark.prototype.getTitleNoCase = function () {
   if (this.titleNoCase == null)
     this.titleNoCase = Bookmark.dropCase(this.title);
@@ -195,14 +203,17 @@ Score.prototype.getScore = function () {
 /**
  * Is the given character a white space?
  */
-Score.isWhiteSpace = function (chr) {
-  return /\s/.test(chr);
+Score.isWhiteSpace = function (ord) {
+  return ord == 0x20;
 };
 
 /**
  * Is the given character in upper case?
  */
 Score.isUpperCase = function (chr) {
+  // If we assume that the vm caches single-character strings, which really is
+  // a must-have optimization in a language where charAt returns a one-character
+  // string, this is a lot more efficient than it looks. 
   return chr.toUpperCase() == chr;
 };
 
@@ -257,13 +268,13 @@ Score.getScore = function (string, stringNoCase, offset, abbrev, matches) {
     // characters but we have to check if there are any skipped character
     // we want to allow with a lower penalty.
     if (matchStartOffset > offset) {
-      if (Score.isWhiteSpace(string.charAt(matchStartOffset - 1))) {
+      if (Score.isWhiteSpace(string.charCodeAt(matchStartOffset - 1))) {
         // The character preceding the match is a whitespace, which is fine;
         // abbreviations can match multiple words.  But we'll still penalize
         // any non-witespace characters a bit, and any other spaces will be
         // penalized fully because they mean we've skipped whole words.
         for (var j = matchStartOffset - 2; j >= offset; j--) {
-          penalty += Score.isWhiteSpace(string.charAt(j)) ? 1.0 : 0.15;
+          penalty += Score.isWhiteSpace(string.charCodeAt(j)) ? 1.0 : 0.15;
         }
       } else if (Score.isUpperCase(string.charAt(matchStartOffset))) {
         // The first character of the match is in upper case.  That's fine,

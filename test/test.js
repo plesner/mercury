@@ -235,9 +235,9 @@ function getScoreDumb(string, stringNoCase, offset, abbrev, matches) {
     }
     var penalty = 0;
     if (matchStartOffset > offset) {
-      if (Score.isWhiteSpace(string.charAt(matchStartOffset - 1))) {
+      if (Score.isWhiteSpace(string.charCodeAt(matchStartOffset - 1))) {
         for (var j = matchStartOffset - 2; j >= offset; j--) {
-          penalty += Score.isWhiteSpace(string.charAt(j)) ? 1.0 : 0.15;
+          penalty += Score.isWhiteSpace(string.charCodeAt(j)) ? 1.0 : 0.15;
         }
       } else if (Score.isUpperCase(string.charAt(matchStartOffset))) {
         for (var j = matchStartOffset - 1; j >= offset; j--) {

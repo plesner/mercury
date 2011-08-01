@@ -6,6 +6,21 @@ Function.prototype.inherit = function (base) {
   this.prototype = new Inheriter();
 };
 
+function toArray(args) {
+  return Array.prototype.slice.call(args);
+}
+
+if (!Function.prototype.bind) {
+  Function.prototype.bind = function () {
+    var method = this;
+    var args = toArray(arguments);
+    var object = args.shift();
+    return function() {
+      return method.apply(object, args.concat(toArray(arguments)));
+    };
+  };
+}
+
 /**
  * Fake test implementation of chrome functionality.
  */
