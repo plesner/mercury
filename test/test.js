@@ -265,7 +265,7 @@ function Match(score, bookmark, markup) {
 
 Match.prototype.compareTo = function (that) {
   if (this.score == that.score) {
-    return this.bookmark.title.compareTo(that.bookmark.title);
+    return String.compare(this.bookmark.title, that.bookmark.title);
   } else {
     return that.score - this.score;
   }

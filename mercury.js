@@ -540,10 +540,10 @@ function SuggestionRequest(bookmarks, text) {
   this.defaultAction = null;
 }
 
-String.prototype.compareTo = function (that) {
-  if (this < that) {
+String.compare = function (one, two) {
+  if (one < two) {
     return -1;
-  } else if (this > that) {
+  } else if (one > two) {
     return 1;
   } else {
     return 0;
@@ -557,7 +557,7 @@ String.prototype.compareTo = function (that) {
 SuggestionRequest.compareCandidates = function (one, two) {
   var scoreCmp = one.getScore().compareTo(two.getScore());
   if (scoreCmp == 0) {
-    return one.getBookmarkTitle().compareTo(two.getBookmarkTitle());
+    return String.compare(one.getBookmarkTitle(), two.getBookmarkTitle());
   } else {
     return scoreCmp;
   }

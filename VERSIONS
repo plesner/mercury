@@ -1,3 +1,10 @@
+2011-08-02  0.9
+
+    Tweaked the search algorithm slightly.
+    
+    Improved performance of installation and search considerably.
+
+
 2011-07-23  0.8
 
     Changed to the quicksilver matching algorithm.  Much better.
