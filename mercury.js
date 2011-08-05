@@ -1,3 +1,113 @@
+"use strict";
+
+/**
+ * Simple homemade assertion.
+ */
+function assertTrue(cond) {
+  if (!cond) {
+    FAIL;
+  }
+}
+
+/**
+ * Wrapper class that takes care of listening for changes in storage and
+ * dispatching them to any listeners.
+ */
+function SettingsProvider() {
+  this.current = Settings.getFromLocalStorage();
+  this.listeners = [];
+  window.addEventListener("storage", this.onStorageChanged.bind(this), false);
+}
+
+/**
+ * Returns the current settings.
+ */
+SettingsProvider.prototype.getCurrent = function () {
+  return this.current;
+};
+
+/**
+ * Adds a listener to be notified when the settings change.
+ */
+SettingsProvider.prototype.addChangeListener = function (listener) {
+  this.listeners.push(listener);
+};
+
+/**
+ * Updates the provider when local storage changes.
+ */
+SettingsProvider.prototype.onStorageChanged = function () {
+  this.current = Settings.getFromLocalStorage();
+  this.listeners.forEach(function (listener) {
+    listener(this.current);
+  }.bind(this));
+};
+
+/**
+ * Gets the given setting value from the json object if it is present,
+ * otherwise the default value.
+ */
+Settings.getValue = function (json, name, ifMissing) {
+  return (name in json) ? !!json[name] : ifMissing;
+}
+
+/**
+ * A collection of current mercury settings
+ */
+function Settings(json) {
+  this.groupExpansion = Settings.getValue(json, 'groupExpansion', true);
+  this.groupVariables = Settings.getValue(json, 'groupVariables', true);
+}
+
+/**
+ * Expand group variables?
+ */
+Settings.prototype.useGroupExpansion = function () {
+  return this.groupExpansion;
+};
+
+/**
+ * Parse the literal group variable syntax?
+ */
+Settings.prototype.useGroupVariables = function () {
+  return this.groupVariables;
+};
+
+/**
+ * Converts these settings to a json string.
+ */
+Settings.prototype.toJson = function () {
+  return JSON.stringify(this);
+}
+
+/**
+ * Are these settings identical to the given set?
+ */
+Settings.prototype.equals = function (that) {
+  return that.groupExpansion == this.groupExpansion
+      && that.groupVariables == this.groupVariables;
+};
+
+/**
+ * Records these settings in local storage.
+ */
+Settings.prototype.saveToLocalStorage = function () {
+  localStorage.setItem("settings", this.toJson());
+};
+
+/**
+ * Returns a settings object corresponding to the current values from local
+ * storage.
+ */
+Settings.getFromLocalStorage = function () {
+  var json = localStorage.getItem("settings");
+  if (json) {
+    return new Settings(JSON.parse(json));
+  } else {
+    return new Settings({});
+  }
+};
+
 /**
  * A bookmark with a path (its parents as a list), a title and a target url.
  */
@@ -451,6 +561,11 @@ function Mercury(chrome) {
    * default suggestion.
    */
   this.lastSuggestions = null;
+  
+  /**
+   * The repository of settings.
+   */
+  this.settingsProvider = new SettingsProvider();
 }
 
 /**
@@ -466,6 +581,13 @@ Mercury.prototype.getBookmarks = function () {
 Mercury.prototype.install = function () {
   this.chrome.addOmniboxChangedListener(this.onInputChanged.bind(this));
   this.chrome.addOmniboxEnteredListener(this.onInputEntered.bind(this));
+};
+
+/**
+ * Returns the currently active settings.
+ */
+Mercury.prototype.getCurrentSettings = function () {
+  return this.settingsProvider.getCurrent();
 };
 
 /**
@@ -487,10 +609,11 @@ Mercury.prototype.onInputChanged = function (text, suggest) {
  * Calculate and return the next set of suggestions, updating the internal
  * state of this object.
  */
-Mercury.prototype.fetchNextSuggestion = function (text) {
+Mercury.prototype.fetchNextSuggestion = function (text, settings) {
   if (text) {
     // We don't bother updating for the empty string.
-    this.lastSuggestions = new SuggestionRequest(this.getBookmarks().getCurrent(), text);
+    this.lastSuggestions = new SuggestionRequest(this.getBookmarks().getCurrent(),
+        this.getCurrentSettings(), text);
     return this.lastSuggestions.run();
   } else {
     return [];
@@ -515,7 +638,7 @@ Mercury.prototype.onInputEntered = function (text) {
 /**
  * Contains the stats associated with calculating a single set of suggestions.
  */
-function SuggestionRequest(bookmarks, text) {
+function SuggestionRequest(bookmarks, settings, text) {
   /**
    * The set of bookmarks that was used to generate these suggestions.
    */
@@ -528,9 +651,14 @@ function SuggestionRequest(bookmarks, text) {
   this.rawText = text;
   
   /**
+   * The settings that were active when this request was constructed.
+   */
+  this.settings = settings;
+  
+  /**
    * List of the words in the input.
    */
-  var inputLists = Parser.parse(text).expand(bookmarks);
+  var inputLists = Parser.parse(text, settings).expand(bookmarks);
   this.inputs = inputLists.map(function (list) { return list.join(" "); });
   
   /**
@@ -797,7 +925,7 @@ Variable.prototype.expand = function (bookmarks) {
 /**
  * Input string tokenizer.
  */
-function Scanner(input) {
+function Scanner(input, settings) {
   /**
    * The input string.
    */
@@ -807,6 +935,20 @@ function Scanner(input) {
    * How far into the input are we?
    */
   this.cursor = 0;
+  
+  /**
+   * The current mercury settings.
+   */
+  this.settings = settings;
+  
+  /**
+   * The set of delimiter characters.
+   */
+  this.delimiters = "";
+  if (settings.useGroupExpansion())
+    this.delimiters += "{},";
+  if (settings.useGroupVariables())
+    this.delimiters += "$";
   
   this.skipSpaces();
 }
@@ -844,16 +986,16 @@ Scanner.prototype.skipSpaces = function () {
 /**
  * Is this a special delimiter character?
  */
-Scanner.isDelimiter = function (chr) {
-  return "{},$".indexOf(chr) != -1;
+Scanner.prototype.isDelimiter = function (chr) {
+  return this.delimiters.indexOf(chr) != -1;
 };
 
 Scanner.isSpace = function (chr) {
   return /\s/.test(chr);
 };
 
-Scanner.isWord = function (chr) {
-  return !Scanner.isDelimiter(chr) && !Scanner.isSpace(chr);
+Scanner.prototype.isWord = function (chr) {
+  return !this.isDelimiter(chr) && !Scanner.isSpace(chr);
 }
 
 /**
@@ -861,7 +1003,7 @@ Scanner.isWord = function (chr) {
  */
 Scanner.prototype.scanToken = function () {
   var current = this.getCurrent();
-  if (Scanner.isDelimiter(current)) {
+  if (this.isDelimiter(current)) {
     this.advance();
     this.skipSpaces();
     return current;
@@ -876,7 +1018,7 @@ Scanner.prototype.scanToken = function () {
 Scanner.prototype.scanWord = function () {
   var result = "";
   var current = this.getCurrent();
-  while (this.hasMore() && Scanner.isWord(current)) {
+  while (this.hasMore() && this.isWord(current)) {
     result += current;
     this.advance();
     current = this.getCurrent();
@@ -888,8 +1030,8 @@ Scanner.prototype.scanWord = function () {
 /**
  * Splits the given string into a list of tokens.
  */
-Scanner.scan = function (str) {
-  var scanner = new Scanner(str);
+Scanner.scan = function (str, settings) {
+  var scanner = new Scanner(str, settings);
   var tokens = [];
   while (scanner.hasMore()) {
     var token = scanner.scanToken();
@@ -901,7 +1043,7 @@ Scanner.scan = function (str) {
 /**
  * Parses a list of tokens into an action expression.
  */
-function Parser(tokens) {
+function Parser(tokens, settings) {
   /**
    * The pre-scanned input tokens.
    */
@@ -911,6 +1053,11 @@ function Parser(tokens) {
    * How far into the tokens are we?
    */
   this.cursor = 0;
+  
+  /**
+   * Current settings.
+   */
+  this.settings = settings;
 }
 
 /**
@@ -946,18 +1093,20 @@ Parser.prototype.parseExpression = function () {
  */
 Parser.prototype.parseSequence = function () {
   var parts = [];
+  var vars = this.settings.useGroupVariables();
+  var groups = this.settings.useGroupExpansion();
   while (this.hasMore()) {
     var token = this.getCurrent();
-    if (token == "{") {
-      this.advance();
-      parts.push(this.parseForEach());
-    } else if (token == "$") {
+    if ((token == "{") && groups) {
+        this.advance();
+        parts.push(this.parseForEach());
+    } else if ((token == "}" || token == ",") && groups) {
+      break;
+    } else if ((token == "$") && vars) {
       this.advance();
       var name = this.getCurrent();
       parts.push(Variable.create(name));
       this.advance();
-    } else if (token == "}" || token == ",") {
-      break;
     } else {
       var word = new WordMatch(token);
       parts.push(word);
@@ -1003,12 +1152,12 @@ Parser.isDelimiter = function (word) {
   }
 }
 
-Parser.parse = function (input) {
-  var tokens = Scanner.scan(input);
+Parser.parse = function (input, settings) {
+  var tokens = Scanner.scan(input, settings);
   if (tokens.length == 0) {
     return null;
   }
-  var parser = new Parser(tokens);
+  var parser = new Parser(tokens, settings);
   return parser.parseSequence();
 }
 

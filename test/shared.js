@@ -1,3 +1,5 @@
+"use strict";
+
 // Various utilities shared between the benchmarks and the tests.
 
 Function.prototype.inherit = function (base) {
@@ -76,12 +78,6 @@ FakeChrome.prototype.clearListeners = function () {
   this.changeListener = null;
 };
 
-function assertTrue(cond) {
-  if (!cond) {
-    FAIL;
-  }
-}
-
 function defer(thunk) {
   window.setTimeout(thunk, 50);
 }
@@ -109,7 +105,7 @@ TestBookmark.prototype.toString = function () {
 
 function TestData() {
   this.bookmarks = [];
-  for (url in top1000Sites) {
+  for (var url in top1000Sites) {
     var value = top1000Sites[url];
     if (url && value && value.url && value.title)
       this.bookmarks.push(new TestBookmark(value));

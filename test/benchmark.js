@@ -1,3 +1,5 @@
+"use strict";
+
 var kProfile = false;
 var kRepeatCount = 16;
 

@@ -1,0 +1,106 @@
+body {
+  font-family: Georgia, serif;
+  color: #444444;
+  margin: 0;
+  background: #f8f8f8;
+}
+
+.block {
+  background: white;
+  padding-left: 5px;
+  padding-right: 5px;
+  padding-bottom: 5px;
+  border-left: 1px solid #b5c7de;
+  border-right: 1px solid #b5c7de;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+  min-height: 100%;
+}
+
+h1 {
+  font-family: sans-serif;
+  background: url("icon48.png") no-repeat;
+  padding-left: 50px;
+  padding-top: 4px;
+  color: black;
+}
+
+h3 {
+  font-family: sans-serif;
+  margin-bottom: 0.5em;
+  padding: 3px;
+  border-top: 1px solid #b5c7de;
+  font-size: 13px;
+  background-color: #ebeff9;
+  color: black;
+}
+
+.setting {
+  margin: 10px;
+  padding: 2px;
+  padding-left: 4px;
+  background-color: #f0f0f0;
+}
+
+.status {
+  float: right;
+  font-size: 11px;
+  margin-top: 4px;
+  margin-right: 4px;
+}
+
+.unchanged {
+  color: #aaaaaa;
+}
+
+.enabled {
+  color: #77cc77;
+}
+
+.disabled {
+  color: #cc7777;
+}
+
+.caption {
+  margin-left: 3px;
+}
+
+blockquote {
+  font-family: courier;
+  font-size: 12px;
+  color: #0e774a;
+}
+
+code {
+  font-family: courier;
+  font-size: 12px;
+  color: #0e774a;
+}
+
+.expander {
+  float: right;
+  cursor: pointer;
+  color: #0e4a77;
+}
+
+.groupsHelp, .debugHelp {
+  display: none;
+}
+
+.debug {
+  font-family: sans-serif;
+  font-size: 10px;
+}
+
+.controls {
+  margin-top: 30px;
+  text-align: center;
+}
+
+button {
+  padding: 5px;
+  margin: 3px;
+  width: 20%;
+  font-size: 12px;
+}

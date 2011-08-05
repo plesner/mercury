@@ -1,3 +1,5 @@
+"use strict";
+
 String.prototype.startsWith = function (substr) {
   if (this.length < substr.length) {
     return false;
@@ -115,7 +117,7 @@ function testGetOverlapRegions() {
  */
 function getMatchString(base, input) {
   var bookmark = new Bookmark(base, "<url>", null);
-  var request = new SuggestionRequest([bookmark], input);
+  var request = new SuggestionRequest([bookmark], new Settings({}), input);
   var matches = request.run();
   assertEquals(1, matches.length);
   var match = matches[0];
@@ -130,7 +132,8 @@ function testSimpleMatch() {
 }
 
 function runScannerTest(input, expected) {
-  var tokens = Scanner.scan(input);
+  var settings = new Settings({});
+  var tokens = Scanner.scan(input, settings);
   var expectedTokens = expected.map(Bookmark.dropCase);
   assertListEquals(expectedTokens, tokens);
 }
@@ -158,7 +161,8 @@ function mapRecursive(obj, fun) {
 }
 
 function runParserTest(input, expected) {
-  var parsed = Parser.parse(input);
+  var settings = new Settings({});
+  var parsed = Parser.parse(input, settings);
   var expectedTree = mapRecursive(expected, Bookmark.dropCase);
   assertListEquals(expectedTree, parsed.toPojso());
 }
@@ -175,7 +179,8 @@ function testParserGrouping() {
 }
 
 function runExpansionTest(input, expected) {
-  var parsed = Parser.parse(input);
+  var settings = new Settings({});
+  var parsed = Parser.parse(input, settings);
   var expectedTree = mapRecursive(expected, Bookmark.dropCase);
   assertListEquals(expectedTree, parsed.expand());
 }
@@ -343,13 +348,13 @@ function runSingleTest(fun, name) {
 
 function runMercuryTests() {
   var tests = [];
-  for (prop in this) {
+  for (var prop in this) {
     if (String(prop).startsWith("test")) {
       tests.push(prop);
     }
   }
   deferredFor(0, tests.length, function (i) {
     var prop = tests[i];
-    runSingleTest(this[prop], prop);
+    runSingleTest(window[prop], prop);
   });
 }
