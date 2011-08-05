@@ -98,15 +98,16 @@ the bookmark manager.
 </h3>
 
 <span class="debugHelp">
-This section has various tools to aid debugging of mercury.
+This section has various tools to aid debugging of mercury.  This box shows
+the raw completions and scores when searching for an input string.
 <div class="debug">
-  <input type="text" id="text" onkeyup="textKeyUp()"></input>
-  <div id="entries"></div>
+  <input type="text" id="text" onkeyup="textKeyUp()" class="searchText"></input>
+  <div id="entries" class="searchEntries"></div>
 </div>
 </span>
 
 <div class="controls">
-  <button id="save">Save Changes</button>
+  <button id="save">Apply</button>
   <button id="reset">Reset</button>
 </div>
     </div>

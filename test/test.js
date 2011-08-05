@@ -188,8 +188,8 @@ function runExpansionTest(input, expected) {
 function testParserExpansion() {
   runExpansionTest("foo", [["foo"]]);
   runExpansionTest("foo bar baz", [["foo", "bar", "baz"]]);
-  runExpansionTest("foo {bar, baz}", [["foo", "bar"], ["foo", "baz"]]);
-  runExpansionTest("{a, b} {c, d}", [["a", "c"], ["a", "d"], ["b", "c"], ["b", "d"]]);
+  runExpansionTest("foo bar, baz", [["foo", "bar"], ["foo", "baz"]]);
+  runExpansionTest("a, b c, d", [["a", "c"], ["a", "d"], ["b", "c"], ["b", "d"]]);
 }
 
 /**

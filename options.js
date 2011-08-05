@@ -150,19 +150,22 @@ function expanderClicked(name) {
 }
 
 function textKeyUp() {
-  var entries = document.getElementById("entries");
-  var text = document.getElementById("text").value;
+  var entries = fetchElement("entries");
+  var text = fetchElement("text").value;
   var suggests = mercury.fetchNextSuggestion(text);
   showSuggestions(suggests);
 }
 
 function showSuggestions(suggests) {
-  var div = document.getElementById("entries");
+  var div = fetchElement("entries");
   while (div.childNodes.length > 0)
     div.removeChild(div.childNodes[0]);
+  var index = 0;
   suggests.forEach(function (suggest) {
     var child = document.createElement('div');
-    child.innerText = suggest.getScore().getScore() + " - " + suggest.getDescription();
+    child.className = "completion" + (index % 2);
+    index++;
+    child.innerText = suggest.getScore().getScore() + ": " + suggest.getDescription();
     div.appendChild(child);
   });
 }
