@@ -1,12 +1,17 @@
-2011-08-02  0.9
+2011-08-07  0.10
+    Changed grouping syntax from "foo {bar, baz}" to "foo bar, baz".  Less
+    expressive but much easier to use.
+    
+    Finished options page and made parser sensitive to option settings.
 
+
+2011-08-02  0.9
     Tweaked the search algorithm slightly.
     
     Improved performance of installation and search considerably.
 
 
 2011-07-23  0.8
-
     Changed to the quicksilver matching algorithm.  Much better.
     
     More work on the options page.

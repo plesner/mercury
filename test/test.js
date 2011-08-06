@@ -131,23 +131,43 @@ function testSimpleMatch() {
   assertEquals(getMatchString("summary", "summ"), "[summ]ary");
 }
 
-function runScannerTest(input, expected) {
-  var settings = new Settings({});
+function runScannerTest(config, input, expected) {
+  var settings = new Settings(config);
   var tokens = Scanner.scan(input, settings);
   var expectedTokens = expected.map(Bookmark.dropCase);
   assertListEquals(expectedTokens, tokens);
 }
 
 function testScanner() {
-  runScannerTest("", []);
-  runScannerTest(" ", []);
-  runScannerTest("foo bar baz", ["foo", "bar", "baz"]);
-  runScannerTest(" foo  bar  baz ", ["foo", "bar", "baz"]);
-  runScannerTest("  foo   bar   baz  ", ["foo", "bar", "baz"]);
-  runScannerTest("{a}{b}", ["{", "a", "}", "{", "b", "}"])
-  runScannerTest(" { a } { b } ", ["{", "a", "}", "{", "b", "}"])
-  runScannerTest("{{a}{b}}", ["{", "{", "a", "}", "{", "b", "}", "}"])
-  runScannerTest("foo{,$}bar", ["foo", "{", ",", "$", "}", "bar"])
+  var N = {groupVariables: false, groupExpansion: false};
+  var G = {groupVariables: false, groupExpansion: true};
+  var V = {groupVariables: true, groupExpansion: false};
+  var A = {groupVariables: true, groupExpansion: true};
+  runScannerTest(N, "", []);
+  runScannerTest(N, " ", []);
+  runScannerTest(N, "foo bar baz", ["foo", "bar", "baz"]);
+  runScannerTest(N, " foo  bar  baz ", ["foo", "bar", "baz"]);
+  runScannerTest(N, "  foo   bar   baz  ", ["foo", "bar", "baz"]);
+  runScannerTest(N, "a, b", ["a,", "b"]);
+  runScannerTest(N, " a , b ", ["a", ",", "b"]);
+  runScannerTest(N, " a ,, b ", ["a", ",,", "b"]);
+  runScannerTest(N, " a $$ b ", ["a", "$$", "b"]);
+  runScannerTest(N, " foo, $bar", ["foo,", "$bar"]);
+  runScannerTest(G, "a, b", ["a", ",", "b"]);
+  runScannerTest(G, " a , b ", ["a", ",", "b"]);
+  runScannerTest(G, " a ,, b ", ["a", ",", ",", "b"]);
+  runScannerTest(G, " a $$ b ", ["a", "$$", "b"]);
+  runScannerTest(G, " foo, $bar", ["foo", ",", "$bar"]);
+  runScannerTest(V, "a, b", ["a,", "b"]);
+  runScannerTest(V, " a , b ", ["a", ",", "b"]);
+  runScannerTest(V, " a ,, b ", ["a", ",,", "b"]);
+  runScannerTest(V, " a $$ b ", ["a", "$", "$", "b"]);
+  runScannerTest(V, " foo, $bar", ["foo,", "$", "bar"]);
+  runScannerTest(A, "a, b", ["a", ",", "b"]);
+  runScannerTest(A, " a , b ", ["a", ",", "b"]);
+  runScannerTest(A, " a ,, b ", ["a", ",", ",", "b"]);
+  runScannerTest(A, " a $$ b ", ["a", "$", "$", "b"]);
+  runScannerTest(A, " foo, $bar", ["foo", ",", "$", "bar"]);
 }
 
 function mapRecursive(obj, fun) {
@@ -170,12 +190,14 @@ function runParserTest(input, expected) {
 function testParserGrouping() {
   runParserTest("foo bar baz", ["foo", "bar", "baz"]);
   runParserTest("foo", ["foo"]);
-  runParserTest("foo {bar baz}", ["foo", ["bar", "baz"]]);
-  runParserTest("foo {bar, baz}", ["foo", ["bar", "baz"]]);
-  runParserTest("foo {bar baz, quux}", ["foo", [["bar", "baz"], "quux"]]);
-  runParserTest("foo {bar {baz}}", ["foo", ["bar", ["baz"]]]);
-  runParserTest("foo {bar {baz} quux}", ["foo", ["bar", ["baz"], "quux"]]);
-  runParserTest("foo {bar {baz, zoom} quux}", ["foo", ["bar", ["baz", "zoom"], "quux"]]);
+  runParserTest("foo,", ["foo"]);
+  runParserTest("foo $bar", ["foo", ["$", "bar"]]);
+  runParserTest("foo $", ["foo", "$"]);
+  runParserTest("foo bar, baz", ["foo", ["bar", "baz"]]);
+  runParserTest("foo bar , baz", ["foo", ["bar", "baz"]]);
+  runParserTest("foo bar, baz, quux", ["foo", ["bar", "baz", "quux"]]);
+  runParserTest("foo bar, baz zoom quux", ["foo", ["bar", "baz"], "zoom", "quux"]);
+  runParserTest("foo, bar baz, zoom, quux", [["foo", "bar"], ["baz", "zoom", "quux"]]);
 }
 
 function runExpansionTest(input, expected) {

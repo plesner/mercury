@@ -946,7 +946,7 @@ function Scanner(input, settings) {
    */
   this.delimiters = "";
   if (settings.useGroupExpansion())
-    this.delimiters += "{},";
+    this.delimiters += ",";
   if (settings.useGroupVariables())
     this.delimiters += "$";
   
@@ -1089,57 +1089,60 @@ Parser.prototype.parseExpression = function () {
 };
 
 /**
- * Parses a sequence expression.
+ * <expr> -> <atom> | <group>
  */
 Parser.prototype.parseSequence = function () {
   var parts = [];
-  var vars = this.settings.useGroupVariables();
-  var groups = this.settings.useGroupExpansion();
+  var useGroups = this.settings.useGroupExpansion();
   while (this.hasMore()) {
-    var token = this.getCurrent();
-    if ((token == "{") && groups) {
-        this.advance();
-        parts.push(this.parseForEach());
-    } else if ((token == "}" || token == ",") && groups) {
-      break;
-    } else if ((token == "$") && vars) {
-      this.advance();
-      var name = this.getCurrent();
-      parts.push(Variable.create(name));
-      this.advance();
-    } else {
-      var word = new WordMatch(token);
-      parts.push(word);
-      this.advance();
-    }
+    var part = useGroups ? this.parseGroup() : this.parseAtom();
+    parts.push(part);
   }
   return Sequence.create(parts);
 };
 
 /**
- * Parses a group of the form {a, b, c}.
+ * <atom> -> <var> | <word>
  */
-Parser.prototype.parseForEach = function () {
+Parser.prototype.parseAtom = function () {
+  var useVars = this.settings.useGroupVariables();
+  var token = this.getCurrent();
+  if (useVars && (token == "$")) {
+    return this.parseVariable();
+  } else {
+    this.advance();
+    return new WordMatch(token);
+  }
+}
+
+/**
+ * <var> -> "$" <word>
+ */
+Parser.prototype.parseVariable = function () {
+  var first = this.getCurrent();
+  this.advance();
+  if (this.hasMore()) {
+    var name = this.getCurrent();
+    this.advance();  
+    return Variable.create(name);
+  } else {
+    return new WordMatch(first);
+  }
+};
+
+/**
+ * <group> -> <atom> +: ","
+ */
+Parser.prototype.parseGroup = function () {
   var parts = [];
-  while (this.hasMore()) {
-    var current = this.getCurrent();
-    if (current == "}") {
-      this.advance();
+  var first = this.parseAtom();
+  parts.push(first);
+  while (this.hasMore() && (this.getCurrent() == ",")) {
+    this.advance();
+    if (!this.hasMore())
       break;
-    } else {
-      var part = this.parseSequence();
-      parts.push(part);
-      current = this.getCurrent();
-      if (current == ",") {
-        this.advance();
-        continue;
-      } else if (current == "}") {
-        this.advance();
-        break;
-      } else {
-        break;
-      }
-    }
+    var next = this.parseAtom();
+    parts.push(next);
   }
   return ForEach.create(parts);
 };
