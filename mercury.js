@@ -324,16 +324,15 @@ Score.isUpperCase = function (chr) {
   // If we assume that the vm caches single-character strings, which really is
   // a must-have optimization in a language where charAt returns a one-character
   // string, this is a lot more efficient than it looks. 
-  return chr.toUpperCase() == chr;
+  return chr.toLowerCase() != chr;
 };
 
 /**
  * Returns a score between 0 and 1 specifying how good a match the
  * abbreviation is for the given string.
  *
- * A port of the quicksilver string scoring algorithm with a few improvements
- * to the implementation but not the algorithm.  The original is
- * scoreForAbbreviation in
+ * A port of the quicksilver string scoring algorithm with a few improvements.
+ * The original is scoreForAbbreviation in
  * http://blacktree-alchemy.googlecode.com/svn/trunk/Crucible/Code/NSString_BLTRExtensions.m.
  */
 Score.getScore = function (string, stringNoCase, offset, abbrev, matches) {
@@ -374,6 +373,10 @@ Score.getScore = function (string, stringNoCase, offset, abbrev, matches) {
     // We start out by giving each character a penalty of 0 and then working
     // from there.
     var penalty = 0;
+    // We don't want to boost a lower score just because we don't penalize
+    // non-matching characters very much so we ensure that they're penalized
+    // enough that they don't count more than the remaining match.
+    var unitPenalty = Math.max(0.15, 1 - ((1 - remainingScore) * 0.10))
     // If we skipped some letters then we'll probably want to penalize those
     // characters but we have to check if there are any skipped character
     // we want to allow with a lower penalty.
@@ -384,7 +387,7 @@ Score.getScore = function (string, stringNoCase, offset, abbrev, matches) {
         // any non-witespace characters a bit, and any other spaces will be
         // penalized fully because they mean we've skipped whole words.
         for (var j = matchStartOffset - 2; j >= offset; j--) {
-          penalty += Score.isWhiteSpace(string.charCodeAt(j)) ? 1.0 : 0.15;
+          penalty += Score.isWhiteSpace(string.charCodeAt(j)) ? 1.0 : unitPenalty;
         }
       } else if (Score.isUpperCase(string.charAt(matchStartOffset))) {
         // The first character of the match is in upper case.  That's fine,
@@ -393,7 +396,7 @@ Score.getScore = function (string, stringNoCase, offset, abbrev, matches) {
         // other upper case letters we've skipped will get the full penalty
         // because we've skipped previous abbreviation or camel case words.
         for (var j = matchStartOffset - 1; j >= offset; j--) {
-          penalty += Score.isUpperCase(string.charAt(j)) ? 1.0 : 0.15;
+          penalty += Score.isUpperCase(string.charAt(j)) ? 1.0 : unitPenalty;
         }
       } else {
         // There's nothing special so just penalize all skipped characters

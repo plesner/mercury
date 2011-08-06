@@ -261,14 +261,15 @@ function getScoreDumb(string, stringNoCase, offset, abbrev, matches) {
       continue;
     }
     var penalty = 0;
+    var unitPenalty = Math.max(0.15, 1 - ((1 - remainingScore) * 0.10))
     if (matchStartOffset > offset) {
       if (Score.isWhiteSpace(string.charCodeAt(matchStartOffset - 1))) {
         for (var j = matchStartOffset - 2; j >= offset; j--) {
-          penalty += Score.isWhiteSpace(string.charCodeAt(j)) ? 1.0 : 0.15;
+          penalty += Score.isWhiteSpace(string.charCodeAt(j)) ? 1.0 : unitPenalty;
         }
       } else if (Score.isUpperCase(string.charAt(matchStartOffset))) {
         for (var j = matchStartOffset - 1; j >= offset; j--) {
-          penalty += Score.isUpperCase(string.charAt(j)) ? 1.0 : 0.15;
+          penalty += Score.isUpperCase(string.charAt(j)) ? 1.0 : unitPenalty;
         }
       } else {
         penalty += matchStartOffset - offset;
