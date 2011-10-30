@@ -1,19 +1,22 @@
+2011-10-31  0.11
+    Added some icons and moved images to subfolder.
+
 2011-08-07  0.10
     Changed grouping syntax from "foo {bar, baz}" to "foo bar, baz".  Less
     expressive but much easier to use.
-    
+
     Finished options page and made parser sensitive to option settings.
 
 
 2011-08-02  0.9
     Tweaked the search algorithm slightly.
-    
+
     Improved performance of installation and search considerably.
 
 
 2011-07-23  0.8
     Changed to the quicksilver matching algorithm.  Much better.
-    
+
     More work on the options page.
 
 
@@ -24,9 +27,9 @@
 2011-07-21  0.6
 
     Fixed bug when the same character is repeated.
-    
+
     Added shell-style group expansion.
-    
+
     Added variable expansion.
 
 
@@ -36,9 +39,9 @@
 
 2011-07-20  0.4
     Cleaned up the code considerably.
-    
+
     Added highlighting of the input string in the matched bookmarks.
-    
+
     Fixed an escaping issue where any bookmark that included the & character
     in the description would cause suggestion processing to be aborted.
 
