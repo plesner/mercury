@@ -1,7 +1,7 @@
 <html>
   <head>
     <title>Mercury Options</title>
-    <link href="options.css" rel="stylesheet" type="text/css"> 
+    <link href="options.css" rel="stylesheet" type="text/css">
     <script type="text/javascript" src="mercury.js"></script>
     <script type="text/javascript" src="options.js"></script>
   </head>
@@ -32,7 +32,7 @@ will find the best matches for <code>so do</code>, <code>so re</code> and
 use multiple groups at the same time, so
 
   <blockquote>
-  o, so do, re  
+  o, so do, re
   </blockquote>
 
 will expand to <code>o do</code>, <code>o re</code>, <code>so do</code> and
@@ -91,6 +91,43 @@ and you will get the same effect as if you'd written the full expression above.
 Yes, the <code>set://...</code> syntax is weird but it's there to play nice with
 the bookmark manager.
 </span>
+
+<h3>
+  Restrictions
+  <div class="expander" onclick="expanderClicked('restrict')">?</div>
+</h3>
+
+<span class="restrictHelp">
+Any bookmark folders mentioned in this comma-separated list will not be searched
+by mercury.
+</span>
+
+<div class="setting">
+  <span class="caption">
+    Don't complete bookmarks in these folders:
+  </span>
+  <br/>
+  <input type="text" id="excludeFoldersText" class="singleline"></input>
+  <div class="status unchanged" id="excludeFoldersIndicator">
+    unchanged
+  </div>
+</div>
+
+<span class="restrictHelp">
+If any bookmark folders are mentioned in this comma-separated list only they
+will be searched by mercury.
+</span>
+
+<div class="setting">
+  <span class="caption">
+    Only complete bookmarks in these folders:
+  </span>
+  <br/>
+  <input type="text" id="includeFoldersText" class="singleline"></input>
+  <div class="status unchanged" id="includeFoldersIndicator">
+    unchanged
+  </div>
+</div>
 
 <h3>
   Debugging

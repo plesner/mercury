@@ -48,7 +48,7 @@ SettingsProvider.prototype.onStorageChanged = function () {
  * otherwise the default value.
  */
 Settings.getValue = function (json, name, ifMissing) {
-  return (name in json) ? !!json[name] : ifMissing;
+  return json.hasOwnProperty(name) ? json[name] : ifMissing;
 }
 
 /**
@@ -57,6 +57,8 @@ Settings.getValue = function (json, name, ifMissing) {
 function Settings(json) {
   this.groupExpansion = Settings.getValue(json, 'groupExpansion', true);
   this.groupVariables = Settings.getValue(json, 'groupVariables', true);
+  this.excludeFolders = Settings.getValue(json, 'excludeFolders', []);
+  this.includeFolders = Settings.getValue(json, 'includeFolders', []);
 }
 
 /**
@@ -74,6 +76,21 @@ Settings.prototype.useGroupVariables = function () {
 };
 
 /**
+ * Is the given value listed in the set of folders to exclude?
+ */
+Settings.prototype.isExcluded = function (name) {
+  return this.excludeFolders.indexOf(name) != -1;
+};
+
+/**
+ * Is the given value listed in the set of folders to include?
+ */
+Settings.prototype.isIncluded = function (name) {
+  var list = this.includeFolders;
+  return !list.length || (list.indexOf(name) != -1);
+};
+
+/**
  * Converts these settings to a json string.
  */
 Settings.prototype.toJson = function () {
@@ -85,7 +102,9 @@ Settings.prototype.toJson = function () {
  */
 Settings.prototype.equals = function (that) {
   return that.groupExpansion == this.groupExpansion
-      && that.groupVariables == this.groupVariables;
+      && that.groupVariables == this.groupVariables
+      && String(that.excludeFolders) == String(this.excludeFolders)
+      && String(that.includeFolders) == String(this.excludeFolders);
 };
 
 /**
@@ -116,22 +135,22 @@ function Bookmark(title, url, parent) {
    * The title of this bookmark.
    */
   this.title = title;
-  
+
   /**
    * Cache of the title with case cleared.
    */
   this.titleNoCase = null;
-  
+
   /**
    * The URL of this bookmark.
    */
   this.url = url;
-  
+
   /**
    * The folder that contains this bookmark.
    */
   this.parent = parent;
-  
+
   /**
    * A cache of an int fingerprint that is used for a quick check of
    * whether this bookmark could possibly match an input.
@@ -285,7 +304,7 @@ function Score(score, matches) {
    * The score value.
    */
   this.score = score;
-  
+
   /**
    * An array of match indices.
    */
@@ -323,7 +342,7 @@ Score.isWhiteSpace = function (ord) {
 Score.isUpperCase = function (chr) {
   // If we assume that the vm caches single-character strings, which really is
   // a must-have optimization in a language where charAt returns a one-character
-  // string, this is a lot more efficient than it looks. 
+  // string, this is a lot more efficient than it looks.
   return chr.toLowerCase() != chr;
 };
 
@@ -341,7 +360,7 @@ Score.getScore = function (string, stringNoCase, offset, abbrev, matches) {
     // a perfect one.
     return 0.9;
   } else if (abbrev.length > (string.length - offset)) {
-    // Abbreviation is longer than the string so it definitely can't match.  
+    // Abbreviation is longer than the string so it definitely can't match.
     return 0.0;
   }
   // The more of the abbreviation we can match in one block the better, so we
@@ -448,7 +467,7 @@ Score.create = function (base, baseNoCase, inputNoCase) {
  * A repository of bookmarks that keeps itself updated as the underlying
  * bookmarks change.
  */
-function BookmarkRepository(chrome) {
+function BookmarkRepository(chrome, settingsProvider) {
   /**
    * Access to chrome.
    */
@@ -469,6 +488,13 @@ function BookmarkRepository(chrome) {
    */
   this.changeListeners = [];
 
+  /**
+   * The provider of settings.
+   */
+  this.settingsProvider = settingsProvider;
+
+  this.settingsProvider.addChangeListener(this.onSettingsChanged.bind(this));
+
   this.initialize();
 }
 
@@ -477,6 +503,14 @@ function BookmarkRepository(chrome) {
  */
 BookmarkRepository.prototype.initialize = function () {
   this.chrome.addBookmarkEventListener(this.reload.bind(this));
+  this.reload();
+};
+
+/**
+ * Called whenever any settings change.
+ */
+BookmarkRepository.prototype.onSettingsChanged = function () {
+  // Reload in case include/exclude has changed.
   this.reload();
 };
 
@@ -518,9 +552,10 @@ BookmarkRepository.prototype.reload = function () {
  * Update the set of bookmarks we know about to a new set fetched from chrome.
  */
 BookmarkRepository.prototype.onFetched = function (tree) {
+  var settings = this.settingsProvider.getCurrent();
   this.bookmarks = [];
   for (var i = 0; i < tree.length; i++) {
-    this.addBookmarks(tree[i], null, 0);
+    this.addBookmarks(tree[i], null, 0, false, false, settings);
   }
   this.isReloading = false;
   this.notifyChangeListeners();
@@ -529,19 +564,26 @@ BookmarkRepository.prototype.onFetched = function (tree) {
 /**
  * Add the given bookmark tree node to the repository.
  */
-BookmarkRepository.prototype.addBookmarks = function (node, parent, depth) {
+BookmarkRepository.prototype.addBookmarks = function (node, parent, depth, isIncluded, isExcluded, settings) {
   var url = node.url;
   var title = node.title;
   if (url) {
-    // We're at a bookmark, add it to the list.
-    this.bookmarks.push(new Bookmark(title, url, parent));
+    if (isIncluded && !isExcluded) {
+      console.log(title);
+      // We're at a bookmark, add it to the list.
+      this.bookmarks.push(new Bookmark(title, url, parent));
+    }
   } else {
     // We skip folders at level 0 (the root) and 1 (the built-in ones).
     var newParent = (depth < 2) ? parent : new BookmarkFolder(title, parent);
     // We're at a folder, recursively add bookmarks.
     var children = node.children;
+    // Block the children if they're already blocked and not explicitly marked
+    // to be included.
+    var includeChildren = isIncluded || settings.isIncluded(title);
+    var excludeChildren = isExcluded || settings.isExcluded(title);
     for (var i = 0; i < children.length; i++)
-      this.addBookmarks(children[i], newParent, depth + 1);
+      this.addBookmarks(children[i], newParent, depth + 1, includeChildren, excludeChildren, settings);
   }
 };
 
@@ -553,22 +595,22 @@ function Mercury(chrome) {
    * Access to chrome.
    */
   this.chrome = chrome;
-  
+
+  /**
+   * The repository of settings.
+   */
+  this.settingsProvider = new SettingsProvider();
+
   /**
    * Repository of bookmarks that keeps itself updated when they change.
    */
-  this.bookmarks = new BookmarkRepository(chrome);
+  this.bookmarks = new BookmarkRepository(chrome, this.settingsProvider);
 
   /**
    * The last suggestion we made which we'll use if the user selects the
    * default suggestion.
    */
   this.lastSuggestions = null;
-  
-  /**
-   * The repository of settings.
-   */
-  this.settingsProvider = new SettingsProvider();
 }
 
 /**
@@ -652,18 +694,18 @@ function SuggestionRequest(bookmarks, settings, text) {
    * to compare new inputs to.
    */
   this.rawText = text;
-  
+
   /**
    * The settings that were active when this request was constructed.
    */
   this.settings = settings;
-  
+
   /**
    * List of the words in the input.
    */
   var inputLists = Parser.parse(text, settings).expand(bookmarks);
   this.inputs = inputLists.map(function (list) { return list.join(" "); });
-  
+
   /**
    * The default suggection for when the user just presses enter rather than
    * select an item in the list.
@@ -933,17 +975,17 @@ function Scanner(input, settings) {
    * The input string.
    */
   this.input = input;
-  
+
   /**
    * How far into the input are we?
    */
   this.cursor = 0;
-  
+
   /**
    * The current mercury settings.
    */
   this.settings = settings;
-  
+
   /**
    * The set of delimiter characters.
    */
@@ -952,7 +994,7 @@ function Scanner(input, settings) {
     this.delimiters += ",";
   if (settings.useGroupVariables())
     this.delimiters += "$";
-  
+
   this.skipSpaces();
 }
 
@@ -1051,12 +1093,12 @@ function Parser(tokens, settings) {
    * The pre-scanned input tokens.
    */
   this.tokens = tokens;
-  
+
   /**
    * How far into the tokens are we?
    */
   this.cursor = 0;
-  
+
   /**
    * Current settings.
    */
@@ -1126,7 +1168,7 @@ Parser.prototype.parseVariable = function () {
   this.advance();
   if (this.hasMore()) {
     var name = this.getCurrent();
-    this.advance();  
+    this.advance();
     return Variable.create(name);
   } else {
     return new WordMatch(first);
@@ -1386,7 +1428,7 @@ function Markup(text, regions) {
    * The raw text.
    */
   this.text = text;
-  
+
   /**
    * The regions where this text should be highlighted.
    */
@@ -1509,7 +1551,7 @@ Chrome.prototype.getBookmarksTree = function (callback) {
 Chrome.prototype.updateCurrentTab = function (update) {
   chrome.tabs.getSelected(null, function (tab) {
     chrome.tabs.update(tab.id, update);
-  });  
+  });
 };
 
 Chrome.prototype.openNewTab = function (properties) {

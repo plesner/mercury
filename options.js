@@ -1,5 +1,11 @@
 "use strict";
 
+function inherits(parent, base) {
+  function Inheriter() { }
+  Inheriter.prototype = parent.prototype;
+  base.prototype = new Inheriter();
+}
+
 var mercury = new Mercury(new Chrome());
 
 function fetchElement(id) {
@@ -14,9 +20,7 @@ function fetchElement(id) {
 function Setting(name, settings) {
   this.settings = settings;
   this.name = name;
-  this.checkbox = fetchElement(name + "Checkbox");
   this.indicator = fetchElement(name + "Indicator");
-  this.checkbox.addEventListener('click', this.onClicked.bind(this));
 }
 
 Setting.prototype.applyCurrentSettings = function () {
@@ -28,20 +32,30 @@ Setting.prototype.getName = function () {
   return this.name;
 };
 
-Setting.prototype.onClicked = function () {
+Setting.prototype.updateAfterChange = function () {
   this.updateIndicator();
   this.settings.onSettingChanged();
 };
 
-Setting.prototype.updateValue = function () {
+/**
+ * A single boolean-valued setting.
+ */
+function BooleanSetting(name, settings) {
+  Setting.call(this, name, settings);
+  this.checkbox = fetchElement(name + "Checkbox");
+  this.checkbox.addEventListener('click', this.updateAfterChange.bind(this));
+}
+inherits(Setting, BooleanSetting);
+
+BooleanSetting.prototype.updateValue = function () {
   this.checkbox.checked = this.settings.getCurrentValue(this.name);
 };
 
-Setting.prototype.getValue = function () {
+BooleanSetting.prototype.getValue = function () {
   return this.checkbox.checked;
 }
 
-Setting.prototype.updateIndicator = function () {
+BooleanSetting.prototype.updateIndicator = function () {
   if (!this.hasChanged()) {
     this.indicator.innerText = "unchanged";
     this.indicator.className = "status unchanged";
@@ -57,9 +71,47 @@ Setting.prototype.updateIndicator = function () {
   }
 };
 
-Setting.prototype.hasChanged = function () {
+BooleanSetting.prototype.hasChanged = function () {
   return this.settings.getCurrentValue(this.name) != this.getValue();
+};
+
+function ArraySetting(name, settings) {
+  Setting.call(this, name, settings);
+  this.text = fetchElement(name + "Text");
+  this.text.addEventListener('keyup', this.updateAfterChange.bind(this));
+  this.text.addEventListener('change', this.updateAfterChange.bind(this));
 }
+inherits(Setting, ArraySetting);
+
+ArraySetting.prototype.getValue = function () {
+  var rawParts = this.text.value.split(",");
+  var parts = [];
+  rawParts.forEach(function (part) {
+    var stripped = part.replace(/\s/g, '');
+    if (stripped) {
+      parts.push(stripped);
+    }
+  });
+  return parts;
+};
+
+ArraySetting.prototype.updateValue = function () {
+  this.text.value = this.settings.getCurrentValue(this.name).join(", ");
+};
+
+ArraySetting.prototype.updateIndicator = function () {
+  if (!this.hasChanged()) {
+    this.indicator.innerText = "unchanged";
+    this.indicator.className = "status unchanged";
+  } else {
+    this.indicator.innerText = "changed";
+    this.indicator.className = "status enabled";
+  }
+};
+
+ArraySetting.prototype.hasChanged = function () {
+  return String(this.settings.getCurrentValue(this.name)) != String(this.getValue());
+};
 
 /**
  * All the state associated with a settings page.
@@ -69,7 +121,14 @@ function SettingsPage(current) {
   var currentJson = JSON.parse(current.toJson());
   this.controls = [];
   for (var prop in currentJson) {
-    this.controls.push(new Setting(prop, this));
+    var value = currentJson[prop];
+    if (typeof value == 'boolean') {
+      this.controls.push(new BooleanSetting(prop, this));
+    } else if (Array.isArray(value)) {
+      this.controls.push(new ArraySetting(prop, this))
+    } else {
+      console.log("Unknown setting type", prop, value);
+    }
   }
   this.save = fetchElement("save");
   this.reset = fetchElement("reset");
@@ -79,7 +138,7 @@ SettingsPage.prototype.install = function () {
   this.save.addEventListener("click", this.onSave.bind(this));
   this.reset.addEventListener("click", this.onReset.bind(this));
   window.addEventListener("storage", this.onStorageChanged.bind(this), false);
-  this.applyCurrentSettings();  
+  this.applyCurrentSettings();
 };
 
 SettingsPage.prototype.onStorageChanged = function () {

@@ -41,13 +41,19 @@ h3 {
   padding: 2px;
   padding-left: 4px;
   background-color: #f0f0f0;
+  position: relative;
 }
 
 .status {
-  float: right;
+  position: absolute;
+  right: 6px;
+  top: 50%;;
   font-size: 11px;
-  margin-top: 4px;
-  margin-right: 4px;
+  margin-top: -.6em;
+}
+
+.singleline {
+  width: 80%;
 }
 
 .unchanged {
@@ -84,7 +90,7 @@ code {
   color: #0e4a77;
 }
 
-.groupsHelp, .debugHelp {
+.groupsHelp, .debugHelp, .restrictHelp {
   display: none;
 }
 
