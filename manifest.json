@@ -1,6 +1,6 @@
 {
   "name": "Mercury",
-  "version": "0.12",
+  "version": "0.13",
   "description": "Light-weight and fast QuickSilver-style bookmark navigation",
   "background_page": "background.html",
   "options_page": "options.html",

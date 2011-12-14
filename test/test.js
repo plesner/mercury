@@ -52,8 +52,16 @@ function listToString(obj) {
   }
 }
 
+function fakeBookmark(title) {
+  return {
+    getTitle: function () { return title; },
+    getTitleNoCase: function () { return Bookmark.dropCase(title); },
+    getWeights: function () { return Score.calcWeights(title); }
+  };
+}
+
 function getMatchRanges(a, b) {
-  var score = Score.create(a, Bookmark.dropCase(a), Bookmark.dropCase(b));
+  var score = Score.create(fakeBookmark(a), Bookmark.dropCase(b));
   if (score == null) {
     return null;
   } else {
@@ -87,7 +95,7 @@ function testMatchRanges() {
 }
 
 function getMatchScore(a, b) {
-  var score = Score.create(a, Bookmark.dropCase(a), Bookmark.dropCase(b));
+  var score = Score.create(fakeBookmark(a), Bookmark.dropCase(b));
   if (score == null) {
     return 0;
   } else {
@@ -95,16 +103,19 @@ function getMatchScore(a, b) {
   }
 }
 
+function assertLess(a, b) {
+  assertTrue(a < b);
+}
+
 function testMatchScore() {
-  assertEquals(getMatchScore("abcdefg", "abcdefg"), 1.0);
-  assertTrue(getMatchScore("abcdefg", "abcdef") < getMatchScore("abcdefg", "abcdefg"));
-  assertTrue(getMatchScore("abcdefg", "abcde") < getMatchScore("abcdefg", "abcdef"));
-  assertTrue(getMatchScore("abcdefg", "abcd") < getMatchScore("abcdefg", "abcde"));
-  assertTrue(getMatchScore("abcdefg", "abc") < getMatchScore("abcdefg", "abcd"));
-  assertTrue(getMatchScore("abcdefg", "ab") < getMatchScore("abcdefg", "abc"));
-  assertTrue(getMatchScore("abcdefg", "a") < getMatchScore("abcdefg", "ab"));
-  assertEquals(getMatchScore("ab cd e", "abcde"), 1.0);
-  assertTrue(getMatchScore("abncd e", "abcde") < 1.0);
+  assertLess(getMatchScore("abcdefg", "abcdef"), getMatchScore("abcdefg", "abcdefg"));
+  assertLess(getMatchScore("abcdefg", "abcde"), getMatchScore("abcdefg", "abcdef"));
+  assertLess(getMatchScore("abcdefg", "abcd"), getMatchScore("abcdefg", "abcde"));
+  assertLess(getMatchScore("abcdefg", "abc"), getMatchScore("abcdefg", "abcd"));
+  assertLess(getMatchScore("abcdefg", "ab"), getMatchScore("abcdefg", "abc"));
+  assertLess(getMatchScore("abcdefg", "a"), getMatchScore("abcdefg", "ab"));
+  assertTrue(getMatchScore("ab cd e", "abcde") > 0.0);
+  assertLess(1.0, getMatchScore("abncd e", "abcde"));
   assertEquals(getMatchScore("abcdefg", "x"), 0.0);
 }
 
@@ -243,9 +254,9 @@ function testResultCase() {
  */
 function getScoreDumb(string, stringNoCase, offset, abbrev, matches) {
   if (abbrev.length == 0) {
-    return 0.9;
+    return true;
   } else if (abbrev.length > (string.length - offset)) {
-    return 0.0;
+    return false;
   }
   for (var i = abbrev.length; i > 0; i--) {
     var abbrevPart = abbrev.substring(0, i);
@@ -255,34 +266,17 @@ function getScoreDumb(string, stringNoCase, offset, abbrev, matches) {
     }
     var matchEndOffset = matchStartOffset + i;
     var nextAbbrev = abbrev.substring(i);
-    var remainingScore = getScoreDumb(string, stringNoCase, matchEndOffset,
+    var remainingMatch = getScoreDumb(string, stringNoCase, matchEndOffset,
         nextAbbrev, matches);
-    if (remainingScore == 0.0) {
+    if (!remainingMatch) {
       continue;
-    }
-    var penalty = 0;
-    var unitPenalty = Math.max(0.15, 1 - ((1 - remainingScore) * 0.10))
-    if (matchStartOffset > offset) {
-      if (Score.isWhiteSpace(string.charCodeAt(matchStartOffset - 1))) {
-        for (var j = matchStartOffset - 2; j >= offset; j--) {
-          penalty += Score.isWhiteSpace(string.charCodeAt(j)) ? 1.0 : unitPenalty;
-        }
-      } else if (Score.isUpperCase(string.charAt(matchStartOffset))) {
-        for (var j = matchStartOffset - 1; j >= offset; j--) {
-          penalty += Score.isUpperCase(string.charAt(j)) ? 1.0 : unitPenalty;
-        }
-      } else {
-        penalty += matchStartOffset - offset;
-      }
     }
     if (matches) {
       matches.push([matchStartOffset, matchEndOffset - 1]);
     }
-    var partPoints = (matchEndOffset - offset) - penalty;
-    var remainingPoints = remainingScore * (string.length - matchEndOffset);
-    return (partPoints + remainingPoints) / (string.length - offset);
+    return true;
   }
-  return 0.0;
+  return false;
 }
 
 function Match(score, bookmark, markup) {
@@ -310,10 +304,12 @@ function getMatchesDumb(abbrev) {
     var title = bookmark.title;
     var url = bookmark.url;
     var regions = [];
-    var score = getScoreDumb(title, Bookmark.dropCase(title), 0,
+    var isMatch = getScoreDumb(title, Bookmark.dropCase(title), 0,
         Bookmark.dropCase(abbrev), regions);
-    if (score > 0) {
-      matches.push(new Match(score, bookmark, new Markup(title, regions.reverse())));
+    if (isMatch) {
+      regions.reverse();
+      var score = Score.calcMatchWeight(fakeBookmark(title), regions);
+      matches.push(new Match(score, bookmark, new Markup(title, regions)));
     }
   });
   matches.sort(function (a, b) { return a.compareTo(b); });
@@ -351,6 +347,29 @@ function testScoring() {
     });
     assertListEquals(expected, found);
   });
+}
+
+function testWeights() {
+  showWeights("lorem ipsum dolor sit amet consectetur adipisicing elit sed do");
+  showWeights("lorem  ipsum  dolor  sit  amet  consectetur  adipisicing  elit  sed  do");
+  showWeights("lorem.ipsum.dolor.sit.amet.consectetur.adipisicing.elit.sed.do");
+  showWeights("Lorem Ipsum Dolor Sit Amet Consectetur Adipisicing Elit Sed Do");
+  showWeights("Lorem.Ipsum.Dolor.Sit.Amet.Consectetur.Adipisicing.Elit.Sed.Do");
+}
+
+function showWeights(str) {
+  var weights = Score.calcWeights(str);
+  var div = document.createElement('div');
+  for (var i = 0; i < str.length; i++) {
+    var span = document.createElement('span');
+    span.innerText = str.charAt(i);
+    var dist = 1 - weights[i];
+    var color = (dist * 255) << 0;
+    span.style.color = "rgb(" + color + "," + color + "," + color + ")"
+    span.title = weights[i];
+    div.appendChild(span);
+  }
+  document.body.appendChild(div);
 }
 
 function runSingleTest(fun, name) {

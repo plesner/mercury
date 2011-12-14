@@ -156,6 +156,11 @@ function Bookmark(title, url, parent) {
    * whether this bookmark could possibly match an input.
    */
   this.fingerprint = null;
+
+  /**
+   * A cache of the weights vector for this bookmark's title.
+   */
+  this.weights = null;
 }
 
 Bookmark.dropCase = function (str) {
@@ -186,6 +191,15 @@ Bookmark.prototype.getFingerprint = function () {
   if (this.fingerprint == null)
     this.fingerprint = Bookmark.calcFingerprint(this.getTitleNoCase());
   return this.fingerprint;
+};
+
+/**
+ * Returns this bookmark's weight vector, calculating it if necessary.
+ */
+Bookmark.prototype.getWeights = function () {
+  if (this.weights == null)
+    this.weights = Score.calcWeights(this.getTitle());
+  return this.weights;
 };
 
 /**
@@ -231,7 +245,7 @@ Bookmark.prototype.getPath = function () {
  */
 Bookmark.prototype.getScore = function (inputNoCase, inputFingerprint) {
   if (this.matchFingerprint(inputFingerprint)) {
-    return Score.create(this.getTitle(), this.getTitleNoCase(), inputNoCase);
+    return Score.create(this, inputNoCase);
   } else {
     return null;
   }
@@ -330,13 +344,6 @@ Score.prototype.getScore = function () {
 };
 
 /**
- * Is the given character a white space?
- */
-Score.isWhiteSpace = function (ord) {
-  return ord == 0x20;
-};
-
-/**
  * Is the given character in upper case?
  */
 Score.isUpperCase = function (chr) {
@@ -347,6 +354,66 @@ Score.isUpperCase = function (chr) {
 };
 
 /**
+ * Is the given character a word divider?
+ */
+Score.isDivider = function (chr) {
+  return !!Score.kDividerMapCache[chr];
+};
+
+Score.kDividers = " .,!?";
+Score.kDividerMapCache = (function() {
+  var result = {};
+  for (var i = 0; i < Score.kDividers.length; i++) {
+    result[Score.kDividers.charAt(i)] = true;
+  }
+  return result;
+})();
+
+/**
+ * Returns the array of weights of the characters in the given string.
+ */
+Score.calcWeights = function (str) {
+  var weights = [];
+  // The current amplitude. Word boundaries boost the amplitude and then
+  // it declines towards the end of a word. This makes matches at the
+  // beginning of a word rate higher.
+  var amplitude = 1.0;
+  // A dampening factor that gradually increases for each new word. This
+  // makes matches earlier in a bookmark rate higher.
+  var dampening = 1.0;
+  // Are we in the middle of a word or between or at the beginning?
+  var inMiddle = false;
+  // Was the last character a divider? If so, we want to artificially boost
+  // the next character regardless of what type it is.
+  var lastWasDivider = true;
+  for (var i = 0; i < str.length; i++) {
+    var chr = str.charAt(i);
+    var isDivider = Score.isDivider(chr);
+    var isUpperCase = !isDivider && Score.isUpperCase(chr);
+    if (isDivider || isUpperCase) {
+      if (inMiddle) {
+        // If we were in the middle of a word but are now starting a new one
+        // we decrease the dampening factor.
+        dampening *= 0.95;
+      }
+      // Reset the amplitude to boost the beginning of this word.
+      amplitude = 1.0;
+      inMiddle = false;
+    } else {
+      // We must be in the middle of a word.
+      inMiddle = true;
+    }
+    if (inMiddle && !lastWasDivider) {
+      // The further towards the end of the word we go the less matches count.
+      amplitude *= 0.99;
+    }
+    lastWasDivider = isDivider;
+    weights.push(amplitude * dampening);
+  }
+  return weights;
+};
+
+/**
  * Returns a score between 0 and 1 specifying how good a match the
  * abbreviation is for the given string.
  *
@@ -354,14 +421,13 @@ Score.isUpperCase = function (chr) {
  * The original is scoreForAbbreviation in
  * http://blacktree-alchemy.googlecode.com/svn/trunk/Crucible/Code/NSString_BLTRExtensions.m.
  */
-Score.getScore = function (string, stringNoCase, offset, abbrev, matches) {
+Score.doesMatch = function (string, stringNoCase, offset, abbrev, matches) {
   if (abbrev.length == 0) {
-    // Matching the empty string against anything yields a match but not
-    // a perfect one.
-    return 0.9;
+    // The empty string matches anything.
+    return true;
   } else if (abbrev.length > (string.length - offset)) {
     // Abbreviation is longer than the string so it definitely can't match.
-    return 0.0;
+    return false;
   }
   // The more of the abbreviation we can match in one block the better, so we
   // start with the best possible option, everything, and lower our
@@ -379,67 +445,24 @@ Score.getScore = function (string, stringNoCase, offset, abbrev, matches) {
     // Score the remaining abbreviation in the rest of the string.  If it
     // doesn't match then there's no reason to do the extra work associated
     // with scoring and recording a match.
-    var remainingScore = Score.getScore(string, stringNoCase, matchEndOffset,
+    var restMatches = Score.doesMatch(string, stringNoCase, matchEndOffset,
         nextAbbrev, matches);
-    if (remainingScore == 0.0) {
+    if (!restMatches) {
       // We found a match but the rest didn't.  So again we have to retry
       // with a smaller substring.
       continue;
     }
-    // We're going to score the result by giving each character this substring
-    // is responsible for (matching or skipping) a value and then dividing the
-    // result by how big a fraction of the whole string those characters are.
-    // We start out by giving each character a penalty of 0 and then working
-    // from there.
-    var penalty = 0;
-    // We don't want to boost a lower score just because we don't penalize
-    // non-matching characters very much so we ensure that they're penalized
-    // enough that they don't count more than the remaining match.
-    var unitPenalty = Math.max(0.15, 1 - ((1 - remainingScore) * 0.10))
-    // If we skipped some letters then we'll probably want to penalize those
-    // characters but we have to check if there are any skipped character
-    // we want to allow with a lower penalty.
-    if (matchStartOffset > offset) {
-      if (Score.isWhiteSpace(string.charCodeAt(matchStartOffset - 1))) {
-        // The character preceding the match is a whitespace, which is fine;
-        // abbreviations can match multiple words.  But we'll still penalize
-        // any non-witespace characters a bit, and any other spaces will be
-        // penalized fully because they mean we've skipped whole words.
-        for (var j = matchStartOffset - 2; j >= offset; j--) {
-          penalty += Score.isWhiteSpace(string.charCodeAt(j)) ? 1.0 : unitPenalty;
-        }
-      } else if (Score.isUpperCase(string.charAt(matchStartOffset))) {
-        // The first character of the match is in upper case.  That's fine,
-        // abbreviations or start letters are often in upper case, but any
-        // other letters we've skipped will be penalized a little and any
-        // other upper case letters we've skipped will get the full penalty
-        // because we've skipped previous abbreviation or camel case words.
-        for (var j = matchStartOffset - 1; j >= offset; j--) {
-          penalty += Score.isUpperCase(string.charAt(j)) ? 1.0 : unitPenalty;
-        }
-      } else {
-        // There's nothing special so just penalize all skipped characters
-        // to the full extent of the law.
-        penalty += matchStartOffset - offset;
-      }
-    }
+
     // If there is a matches list we push the current match.  Doing this after
     // the recursive call means that the list will be reversed, but it is
     // cheaper to wait until we're sure there is a match.
     if (matches) {
       matches.push([matchStartOffset, matchEndOffset - 1]);
     }
-    // Starting from each character getting 1.0 and then subtracting the
-    // penalty we get the summed points for this match's substring.
-    var partPoints = (matchEndOffset - offset) - penalty;
-    // Then multiplying the remaining score with the remaining length of the
-    // string we get the summed points for the rest of the string.
-    var remainingPoints = remainingScore * (string.length - matchEndOffset);
-    // Then the score is the sum of all the points divided by the number
-    // of characters in all the string we've matched against.
-    return (partPoints + remainingPoints) / (string.length - offset);
+
+    return true;
   }
-  return 0.0;
+  return false;
 };
 
 /**
@@ -453,14 +476,29 @@ Score.getScore = function (string, stringNoCase, offset, abbrev, matches) {
  * corresponding matching strings, plus 1 for the distance in index between
  * where the matching strings occur.
  */
-Score.create = function (base, baseNoCase, inputNoCase) {
-  var matches = [];
-  var score = Score.getScore(base, baseNoCase, 0, inputNoCase, matches);
-  if (score == 0.0) {
-    return null;
+Score.create = function (bookmark, inputNoCase) {
+  var base = bookmark.getTitle();
+  var baseNoCase = bookmark.getTitleNoCase();
+  var matchList = [];
+  var matches = Score.doesMatch(base, baseNoCase, 0, inputNoCase, matchList);
+  if (matches) {
+    matchList.reverse();
+    return new Score(Score.calcMatchWeight(bookmark, matchList), matchList);
   } else {
-    return new Score(score, matches.reverse())
+    return null;
   }
+};
+
+Score.calcMatchWeight = function (bookmark, matchList) {
+  var weights = bookmark.getWeights();
+  var score = 0.0;
+  for (var i = 0; i < matchList.length; i++) {
+    var match = matchList[i];
+    for (var j = match[0]; j <= match[1]; j++) {
+      score += weights[j];
+    }
+  }
+  return score;
 };
 
 /**
