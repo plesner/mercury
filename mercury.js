@@ -569,7 +569,6 @@ BookmarkRepository.prototype.addBookmarks = function (node, parent, depth, isInc
   var title = node.title;
   if (url) {
     if (isIncluded && !isExcluded) {
-      console.log(title);
       // We're at a bookmark, add it to the list.
       this.bookmarks.push(new Bookmark(title, url, parent));
     }

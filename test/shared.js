@@ -31,9 +31,9 @@ function FakeChrome() {
    * A set of fake bookmarks.
    */
   this.bookmarks = [];
-  
+
   this.changeListener = null;
-  
+
   this.defaultSuggestion = null;
 }
 
@@ -46,7 +46,11 @@ FakeChrome.prototype.addOmniboxEnteredListener = function (listener) {
 };
 
 FakeChrome.prototype.getBookmarksTree = function (callback) {
-  callback(this.bookmarks);
+  callback([{
+    title: "",
+    url: "",
+    children: this.bookmarks
+  }]);
 };
 
 FakeChrome.prototype.setOmniboxDefaultSuggestion = function (value) {
@@ -71,7 +75,7 @@ FakeChrome.prototype.setOmniboxText = function (value) {
 };
 
 FakeChrome.prototype.addBookmark = function (text, url) {
-  this.bookmarks.push({'title': text, 'url': url});
+  this.bookmarks.push({title: text, url: url});
 };
 
 FakeChrome.prototype.clearListeners = function () {
