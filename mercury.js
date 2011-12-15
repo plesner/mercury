@@ -492,11 +492,16 @@ Score.create = function (bookmark, inputNoCase) {
 Score.calcMatchWeight = function (bookmark, matchList) {
   var weights = bookmark.getWeights();
   var score = 0.0;
+  // The dampening factor is used to make matches that are spread across
+  // the input count less than a match where the letters are closer
+  // together.
+  var dampening = 1.0;
   for (var i = 0; i < matchList.length; i++) {
     var match = matchList[i];
     for (var j = match[0]; j <= match[1]; j++) {
-      score += weights[j];
+      score += (weights[j] * dampening);
     }
+    dampening *= 0.9;
   }
   return score;
 };
