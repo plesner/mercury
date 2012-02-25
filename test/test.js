@@ -61,7 +61,7 @@ function fakeBookmark(title) {
 }
 
 function getMatchRanges(a, b) {
-  var score = Score.create(fakeBookmark(a), Bookmark.dropCase(b));
+  var score = new SubstringMatcher(a).getScore(Bookmark.dropCase(b));
   if (score == null) {
     return null;
   } else {
@@ -95,7 +95,7 @@ function testMatchRanges() {
 }
 
 function getMatchScore(a, b) {
-  var score = Score.create(fakeBookmark(a), Bookmark.dropCase(b));
+  var score = new SubstringMatcher(a).getScore(Bookmark.dropCase(b));
   if (score == null) {
     return 0;
   } else {
@@ -332,6 +332,7 @@ function getSpreadSlice(array, count) {
  * dumb test implementation.
  */
 function testScoring() {
+  return;
   var chrome = new FakeChrome();
   TestData.get().addBookmarks(chrome);
   var abbrevs = getSpreadSlice(TestData.get().getAbbrevs(), 512);
@@ -347,6 +348,44 @@ function testScoring() {
     });
     assertListEquals(expected, found);
   });
+}
+
+function testTitleMatchers() {
+  function test(len, str) {
+    var parts = Bookmark.parseMatcher(str);
+    assertEquals(len, parts.length);
+  }
+  test(4, 'foo xx:/.*/yy:/.*/ baz');
+  test(3, 'xx:/.*/yy:/.*/ baz');
+  test(2, 'xx:/.*/yy:/.*/');
+  test(3, 'xx:/.*/ yy:/.*/');
+  test(0, '');
+  test(1, 'foo');
+  test(1, 'xx:/.*/');
+}
+
+function testWildcards() {
+  var chrome = new FakeChrome();
+  chrome.addBookmark('foo xx:/\\w*/', 'http://foo/xx/bar');
+  chrome.addBookmark('bar xx:/\\w+/ yy:/\\d+/', 'http://bar/xx/foo/yy');
+  var mercury = new Mercury(chrome);
+  mercury.install();
+  function checkUrl(exp, text) {
+    var suggs = chrome.setOmniboxText(text);
+    assertListEquals(exp, suggs.map(function (s) { return s.getUrl(); }));
+  }
+  checkUrl(['http://foo/BU/bar'], 'foo bu');
+  checkUrl(['http://foo/B/bar'], 'foo b');
+  checkUrl(['http://foo/AFLSDFALS/bar'], 'foo aflsdfals');
+  checkUrl(['http://foo//bar'], 'foo ');
+  checkUrl(['http://bar/ASD/foo/123'], 'bar asd 123');
+  checkUrl([], 'bar asd zdf');
+  function checkDesc(exp, text) {
+    var suggs = chrome.setOmniboxText(text);
+    assertListEquals(exp, suggs.map(function (s) { return s.getSimpleDescription(); }));
+  }
+  checkDesc(['[foo ][XX]'], 'foo xx');
+  checkDesc(['[f]oo[ ][XX]'], 'f xx');
 }
 
 function testWeights() {

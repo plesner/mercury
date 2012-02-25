@@ -2,12 +2,6 @@
 
 // Various utilities shared between the benchmarks and the tests.
 
-Function.prototype.inherit = function (base) {
-  function Inheriter() { }
-  Inheriter.prototype = base.prototype;
-  this.prototype = new Inheriter();
-};
-
 function toArray(args) {
   return Array.prototype.slice.call(args);
 }

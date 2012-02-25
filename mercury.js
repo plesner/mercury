@@ -10,6 +10,15 @@ function assertTrue(cond) {
 }
 
 /**
+ * Makes 'this' inherit from the given base function.
+ */
+Function.prototype.inherit = function (base) {
+  function Inheriter() { }
+  Inheriter.prototype = base.prototype;
+  this.prototype = new Inheriter();
+};
+
+/**
  * Wrapper class that takes care of listening for changes in storage and
  * dispatching them to any listeners.
  */
@@ -128,6 +137,320 @@ Settings.getFromLocalStorage = function () {
 };
 
 /**
+ * Supertype of objects that can match input.
+ */
+function Matcher() {
+  /**
+   * A cache of an int fingerprint that is used for a quick check of
+   * whether this matcher could possibly match an input.
+   */
+  this.fingerprint = null;
+
+  /**
+   * An optional matcher to match with once this matcher has been
+   * successful.
+   */
+  this.next = null;
+}
+
+/**
+ * Returns this matcher's fingerprint, calculating it if necessary.
+ */
+Matcher.prototype.getFingerprint = function () {
+  if (this.fingerprint == null)
+    this.fingerprint = this.calcFingerprint();
+  return this.fingerprint;
+};
+
+/**
+ * Sets the matcher to use once this one has been successful.
+ */
+Matcher.prototype.setNext = function (value) {
+  this.next = value;
+};
+
+/**
+ * Returns the matcher to use once this one has been successful, or null
+ * if this is the last one.
+ */
+Matcher.prototype.getNext = function () {
+  return this.next;
+};
+
+/**
+ * Returns true if the given input fingerprint is a subset of this matcher's
+ * fingerprint.
+ */
+Matcher.prototype.matchFingerprint = function (inputPrint) {
+  return (this.getFingerprint() & inputPrint) == inputPrint;
+};
+
+/**
+ * Compares two lists of words, returning a list of matches.  If the two lists
+ * don't match null is returned.  We do this by basically matching each word
+ * in the input with each word in the base.  If any word has no match we bail
+ * out, and we only look for a match for the next input token after the first
+ * match for the previous input token.
+ *
+ * Each resulting score in the returned list is the score of the two
+ * corresponding matching strings, plus 1 for the distance in index between
+ * where the matching strings occur.
+ */
+Matcher.prototype.getScore = function (inputNoCase) {
+  var matchList = [];
+  var bindings = {};
+  var matches = this.doesMatch(0, 0, inputNoCase, matchList, bindings);
+  if (matches) {
+    matchList.reverse();
+    return new Score(this.calcMatchWeight(0, matchList, 0), matchList, bindings);
+  } else {
+    return null;
+  }
+};
+
+SubstringMatcher.inherit(Matcher);
+function SubstringMatcher(pattern) {
+  Matcher.call(this);
+
+  /**
+   * The pattern to match against.
+   */
+  this.pattern = pattern;
+
+  /**
+   * Cache of the pattern with case cleared.
+   */
+  this.patternNoCase = null;
+
+  /**
+   * A cache of the weights vector for this matcher's pattern.
+   */
+  this.weights = null;
+}
+
+/**
+ * Calculates this string matcher's fingerprint.
+ */
+SubstringMatcher.prototype.calcFingerprint = function () {
+  var myPrint = Bookmark.calcFingerprint(this.getPatternNoCase());
+  return (this.getNext() == null)
+      ? myPrint
+      : (myPrint | this.getNext().calcFingerprint());
+}
+
+/**
+ * Returns this bookmark's weight vector, calculating it if necessary.
+ */
+SubstringMatcher.prototype.getWeights = function () {
+  if (this.weights == null)
+    this.weights = Score.calcWeights(this.getPattern());
+  return this.weights;
+};
+
+/**
+ * Returns the pattern this matcher matches against.
+ */
+SubstringMatcher.prototype.getPattern = function () {
+  return this.pattern;
+};
+
+/**
+ * Appends a match matched by this matcher to a description.
+ */
+SubstringMatcher.prototype.addTitleDescription = function (globalOffset,
+    textOffset, partsOut, regionsOut, score, matchOffset) {
+  var matches = score.getMatches();
+  partsOut.push(this.getPattern());
+  for (var i = matchOffset; i < matches.length; i++) {
+    var match = matches[i];
+    var startOffset = match[0] - globalOffset;
+    var endOffset = match[1] - globalOffset;
+    if (startOffset >= this.pattern.length) {
+      var newGlobalOffset = globalOffset + this.getPattern().length;
+      return this.getNext().addTitleDescription(newGlobalOffset,
+          textOffset + this.getPattern().length, partsOut, regionsOut, score,
+          i);
+    }
+    regionsOut.push([textOffset + startOffset, textOffset + endOffset])
+  }
+}
+
+/**
+ * Returns the pattern of this matcher where case has been cleared.
+ */
+SubstringMatcher.prototype.getPatternNoCase = function () {
+  if (this.patternNoCase == null)
+    this.patternNoCase = Bookmark.dropCase(this.getPattern());
+  return this.patternNoCase;
+};
+
+/**
+ * Returns the weight of an array of matches within this substring matcher.
+ */
+SubstringMatcher.prototype.calcMatchWeight = function (globalOffset, matchList, listOffset) {
+  var weights = this.getWeights();
+  var score = 0.0;
+  // The dampening factor is used to make matches that are spread across
+  // the input count less than a match where the letters are closer
+  // together.
+  var dampening = 1.0;
+  for (var i = listOffset; i < matchList.length; i++) {
+    var match = matchList[i];
+    var start = match[0] - globalOffset;
+    var end = match[1] - globalOffset;
+    if (start >= weights.length) {
+      var rest = this.getNext().calcMatchWeight(globalOffset + weights.lenght,
+        matchList, i);
+      return score + (rest * 0.9);
+    } else {
+      for (var j = start; j <= end; j++) {
+        score += (weights[j] * dampening);
+      }
+      dampening *= 0.9;
+    }
+  }
+  return score;
+};
+
+/**
+ * Returns true if this matcher matches the given abbreviation.
+ *
+ * A port of the quicksilver string scoring algorithm with a few improvements.
+ * The original is scoreForAbbreviation in
+ * http://blacktree-alchemy.googlecode.com/svn/trunk/Crucible/Code/NSString_BLTRExtensions.m.
+ */
+SubstringMatcher.prototype.doesMatch = function (globalOffset, localOffset,
+    abbrev, matches, bindings) {
+  var string = this.getPattern();
+  var stringNoCase = this.getPatternNoCase();
+  if (abbrev.length == 0) {
+    var next = this.getNext();
+    if (next) {
+      return next.doesMatch(globalOffset, 0, abbrev, matches, bindings);
+    } else {
+      // The empty string matches anything.
+      return true;
+    }
+  } else if (localOffset == string.length) {
+    // If we're at the end of this matcher try the next one.
+    var next = this.getNext();
+    return next ? next.doesMatch(globalOffset, 0, abbrev, matches, bindings) : false;
+  }
+  // The more of the abbreviation we can match in one block the better, so we
+  // start with the best possible option, everything, and lower our
+  // expectations gradually.
+  for (var i = abbrev.length; i > 0; i--) {
+    var abbrevPart = abbrev.substring(0, i);
+    var matchStartLocalOffset = stringNoCase.indexOf(abbrevPart, localOffset);
+    if (matchStartLocalOffset == -1) {
+      // We didn't find a match.  Okay, we were too ambitious -- retry with
+      // the next smaller substring.
+      continue;
+    }
+    var matchEndLocalOffset = matchStartLocalOffset + i;
+    var matchDistance = matchStartLocalOffset - localOffset;
+    var matchStartGlobalOffset = globalOffset + matchDistance;
+    var matchEndGlobalOffset = matchStartGlobalOffset + i;
+    var nextAbbrev = abbrev.substring(i);
+    // Score the remaining abbreviation in the rest of the string.  If it
+    // doesn't match then there's no reason to do the extra work associated
+    // with scoring and recording a match.
+    var restMatches = this.doesMatch(matchEndGlobalOffset, matchEndLocalOffset,
+        nextAbbrev, matches, bindings);
+    if (!restMatches) {
+      // We found a match but the rest didn't.  So again we have to retry
+      // with a smaller substring.
+      continue;
+    }
+
+    // If there is a matches list we push the current match.  Doing this after
+    // the recursive call means that the list will be reversed, but it is
+    // cheaper to wait until we're sure there is a match.
+    if (matches) {
+      matches.push([matchStartGlobalOffset, matchEndGlobalOffset - 1]);
+    }
+
+    return true;
+  }
+  return false;
+};
+
+WildcardMatcher.inherit(Matcher);
+function WildcardMatcher(name, matcher) {
+  Matcher.call(this);
+
+  /**
+   * The name that will be bound by matching againts this wildcard.
+   */
+  this.name = name;
+
+  /**
+   * The regexp to match against the input.
+   */
+  this.regexp = new RegExp("^" + matcher);
+};
+
+/**
+ * Returns a fingerprint that matches all strings.
+ */
+WildcardMatcher.prototype.calcFingerprint = function () {
+ return 0x3FFFFFFF;
+};
+
+/**
+ * Test if this wildcard matcher matches the given input.
+ */
+WildcardMatcher.prototype.doesMatch = function (globalOffset, localOffset,
+    abbrev, matches, bindings) {
+  var match = abbrev.match(this.regexp);
+  if (match) {
+    var binding = match[0];
+    var next = this.getNext();
+    if (next) {
+      var newGlobalOffset = globalOffset + binding.length;
+      var newAbbrev = abbrev.substring(binding.length);
+      if (!next.doesMatch(newGlobalOffset, 0, newAbbrev, matches, bindings))
+        return false;
+    }
+    if (matches) {
+      bindings[this.name] = binding;
+      matches.push([globalOffset, globalOffset + binding.length]);
+    }
+    return true;
+  } else {
+    return false;
+  }
+};
+
+/**
+ * Appends a match matched by this matcher to a description.
+ */
+WildcardMatcher.prototype.addTitleDescription = function (globalOffset,
+    textOffset, partsOut, regionsOut, score, matchOffset) {
+  var matches = score.getMatches();
+  var value = score.getBindings()[this.name];
+  partsOut.push(value);
+  var match = matches[matchOffset];
+  var startOffset = match[0] - globalOffset;
+  var endOffset = match[1] - globalOffset;
+  regionsOut.push([textOffset + startOffset, textOffset + endOffset])
+  if (matchOffset + 1 < matches.length) {
+    this.getNext().addTitleDescription(match[1], textOffset + value.length,
+        partsOut, regionsOut, score, matchOffset + 1);
+  }
+}
+
+WildcardMatcher.prototype.calcMatchWeight = function (globalOffset, matchList, listOffset) {
+  if (listOffset == matchList.length - 1) {
+    return 0;
+  } else {
+    var match = matchList[listOffset];
+    return this.getNext().calcMatchWeight(match[1], matchList, listOffset + 1);
+  }
+};
+
+
+/**
  * A bookmark with a path (its parents as a list), a title and a target url.
  */
 function Bookmark(title, url, parent) {
@@ -137,9 +460,9 @@ function Bookmark(title, url, parent) {
   this.title = title;
 
   /**
-   * Cache of the title with case cleared.
+   * Cache of the matcher to use to match this bookmark.
    */
-  this.titleNoCase = null;
+  this.matcher = null;
 
   /**
    * The URL of this bookmark.
@@ -150,18 +473,50 @@ function Bookmark(title, url, parent) {
    * The folder that contains this bookmark.
    */
   this.parent = parent;
-
-  /**
-   * A cache of an int fingerprint that is used for a quick check of
-   * whether this bookmark could possibly match an input.
-   */
-  this.fingerprint = null;
-
-  /**
-   * A cache of the weights vector for this bookmark's title.
-   */
-  this.weights = null;
 }
+
+/**
+ * Turns a bookmark title into a matcher.
+ */
+Bookmark.parseMatcher = function (value) {
+  // The matcher for finding wildcards.
+  var re = /(\w+):\/([^/]*)\//;
+  // How far have we matched into the value?
+  var offset = 0;
+  // A list of the matcher parts.
+  var parts = [];
+  for (var i = 0; i < 10; i++) {
+    // The rest of the string that we're about to match.
+    var rest = value.substring(offset);
+    var match = rest.match(re);
+    if (match) {
+      if (match.index > 0) {
+        parts.push(new SubstringMatcher(rest.substring(0, match.index)));
+      }
+      parts.push(new WildcardMatcher(match[1], match[2]));
+      offset += match.index + match[0].length;
+    } else {
+      break;
+    }
+  }
+  if (offset < value.length) {
+    parts.push(new SubstringMatcher(value.substring(offset)));
+  }
+  return parts;
+};
+
+/**
+ * Creates a matcher for matching this bookmark's title.
+ */
+Bookmark.prototype.calcMatcher = function () {
+  // Parse the bookmark's title into an array of part matchers.
+  var parts = Bookmark.parseMatcher(this.title);
+  // Then thread them such that each one knows what the next one is.
+  for (var i = parts.length - 2; i >= 0; i--)
+    parts[i].setNext(parts[i + 1]);
+  // Finally return the first one.
+  return parts[0];
+};
 
 Bookmark.dropCase = function (str) {
   return str.toUpperCase();
@@ -184,31 +539,6 @@ Bookmark.prototype.getDescription = function () {
   return this.path[i] + " - " + reversePath.join(" / ");
 };
 
-/**
- * Returns this bookmark's fingerprint, calculating it if necessary.
- */
-Bookmark.prototype.getFingerprint = function () {
-  if (this.fingerprint == null)
-    this.fingerprint = Bookmark.calcFingerprint(this.getTitleNoCase());
-  return this.fingerprint;
-};
-
-/**
- * Returns this bookmark's weight vector, calculating it if necessary.
- */
-Bookmark.prototype.getWeights = function () {
-  if (this.weights == null)
-    this.weights = Score.calcWeights(this.getTitle());
-  return this.weights;
-};
-
-/**
- * Returns true if the given input fingerprint is a subset of this bookmark's
- * fingerprint.
- */
-Bookmark.prototype.matchFingerprint = function (inputPrint) {
-  return (this.getFingerprint() & inputPrint) == inputPrint;
-};
 
 /**
  * Calculates the fingerprint of an input string.  The result is an int
@@ -244,8 +574,8 @@ Bookmark.prototype.getPath = function () {
  * Returns a score vector of this bookmark agains the given input.
  */
 Bookmark.prototype.getScore = function (inputNoCase, inputFingerprint) {
-  if (this.matchFingerprint(inputFingerprint)) {
-    return Score.create(this, inputNoCase);
+  if (this.getMatcher().matchFingerprint(inputFingerprint)) {
+    return this.getMatcher().getScore(inputNoCase);
   } else {
     return null;
   }
@@ -259,19 +589,26 @@ Bookmark.prototype.getTitle = function () {
 };
 
 /**
- * Returns the title of this bookmark where case has been cleared.
+ * Returns the string matcher used to match against this bookmark, calculating
+ * it the first time this method is called.
  */
-Bookmark.prototype.getTitleNoCase = function () {
-  if (this.titleNoCase == null)
-    this.titleNoCase = Bookmark.dropCase(this.title);
-  return this.titleNoCase;
+Bookmark.prototype.getMatcher = function () {
+  if (this.matcher == null)
+    this.matcher = this.calcMatcher();
+  return this.matcher;
 };
 
 /**
  * Returns this bookmark's url.
  */
-Bookmark.prototype.getUrl = function () {
-  return this.url;
+Bookmark.prototype.getUrl = function (bindings) {
+  var result = this.url;
+  for (var name in bindings) {
+    if (!bindings.hasOwnProperty(name))
+      continue;
+    result = result.replace(name, bindings[name]);
+  }
+  return result;
 };
 
 /**
@@ -313,7 +650,7 @@ BookmarkFolder.prototype.getParent = function () {
 /**
  * A score we got from comparing two strings.
  */
-function Score(score, matches) {
+function Score(score, matches, bindings) {
   /**
    * The score value.
    */
@@ -323,6 +660,11 @@ function Score(score, matches) {
    * An array of match indices.
    */
   this.matches = matches;
+
+  /**
+   * The bindings from wildcard names to values.
+   */
+  this.bindings = bindings;
 }
 
 /**
@@ -330,6 +672,13 @@ function Score(score, matches) {
  */
 Score.prototype.getMatches = function () {
   return this.matches;
+};
+
+/**
+ * Returns the wildcard binding mapping.
+ */
+Score.prototype.getBindings = function () {
+  return this.bindings;
 };
 
 Score.prototype.compareTo = function (other) {
@@ -411,99 +760,6 @@ Score.calcWeights = function (str) {
     weights.push(amplitude * dampening);
   }
   return weights;
-};
-
-/**
- * Returns a score between 0 and 1 specifying how good a match the
- * abbreviation is for the given string.
- *
- * A port of the quicksilver string scoring algorithm with a few improvements.
- * The original is scoreForAbbreviation in
- * http://blacktree-alchemy.googlecode.com/svn/trunk/Crucible/Code/NSString_BLTRExtensions.m.
- */
-Score.doesMatch = function (string, stringNoCase, offset, abbrev, matches) {
-  if (abbrev.length == 0) {
-    // The empty string matches anything.
-    return true;
-  } else if (abbrev.length > (string.length - offset)) {
-    // Abbreviation is longer than the string so it definitely can't match.
-    return false;
-  }
-  // The more of the abbreviation we can match in one block the better, so we
-  // start with the best possible option, everything, and lower our
-  // expectations gradually.
-  for (var i = abbrev.length; i > 0; i--) {
-    var abbrevPart = abbrev.substring(0, i);
-    var matchStartOffset = stringNoCase.indexOf(abbrevPart, offset);
-    if (matchStartOffset == -1) {
-      // We didn't find a match.  Okay, we were too ambitious -- retry with
-      // the next smaller substring.
-      continue;
-    }
-    var matchEndOffset = matchStartOffset + i;
-    var nextAbbrev = abbrev.substring(i);
-    // Score the remaining abbreviation in the rest of the string.  If it
-    // doesn't match then there's no reason to do the extra work associated
-    // with scoring and recording a match.
-    var restMatches = Score.doesMatch(string, stringNoCase, matchEndOffset,
-        nextAbbrev, matches);
-    if (!restMatches) {
-      // We found a match but the rest didn't.  So again we have to retry
-      // with a smaller substring.
-      continue;
-    }
-
-    // If there is a matches list we push the current match.  Doing this after
-    // the recursive call means that the list will be reversed, but it is
-    // cheaper to wait until we're sure there is a match.
-    if (matches) {
-      matches.push([matchStartOffset, matchEndOffset - 1]);
-    }
-
-    return true;
-  }
-  return false;
-};
-
-/**
- * Compares two lists of words, returning a list of matches.  If the two lists
- * don't match null is returned.  We do this by basically matching each word
- * in the input with each word in the base.  If any word has no match we bail
- * out, and we only look for a match for the next input token after the first
- * match for the previous input token.
- *
- * Each resulting score in the returned list is the score of the two
- * corresponding matching strings, plus 1 for the distance in index between
- * where the matching strings occur.
- */
-Score.create = function (bookmark, inputNoCase) {
-  var base = bookmark.getTitle();
-  var baseNoCase = bookmark.getTitleNoCase();
-  var matchList = [];
-  var matches = Score.doesMatch(base, baseNoCase, 0, inputNoCase, matchList);
-  if (matches) {
-    matchList.reverse();
-    return new Score(Score.calcMatchWeight(bookmark, matchList), matchList);
-  } else {
-    return null;
-  }
-};
-
-Score.calcMatchWeight = function (bookmark, matchList) {
-  var weights = bookmark.getWeights();
-  var score = 0.0;
-  // The dampening factor is used to make matches that are spread across
-  // the input count less than a match where the letters are closer
-  // together.
-  var dampening = 1.0;
-  for (var i = 0; i < matchList.length; i++) {
-    var match = matchList[i];
-    for (var j = match[0]; j <= match[1]; j++) {
-      score += (weights[j] * dampening);
-    }
-    dampening *= 0.9;
-  }
-  return score;
 };
 
 /**
@@ -689,6 +945,8 @@ Mercury.prototype.onInputChanged = function (text, suggest) {
       rest.push(suggests[i]);
     suggest(rest);
     this.chrome.setOmniboxDefaultSuggestion(best);
+  } else {
+    this.chrome.setOmniboxDefaultSuggestion(null);
   }
 };
 
@@ -1275,11 +1533,11 @@ SingleSuggestion.prototype.formatDescription = function (doFormat) {
   // Appends the given string which appears in the base at the given index to
   // the text, updating the regions appropriately.
   function addTitle() {
+    var parts = [];
     var offset = text.length;
-    self.score.getMatches().forEach(function (match) {
-      regions.push([offset + match[0], offset + match[1]]);
-    });
-    text += self.bookmark.getTitle();
+    self.bookmark.getMatcher().addTitleDescription(0, offset, parts, regions,
+        self.score, 0);
+    text += parts.join("");
   }
   function addText(value) {
     text += value;
@@ -1332,7 +1590,7 @@ SingleSuggestion.prototype.getScore = function () {
  * Returns the url to go to for this suggestion.
  */
 SingleSuggestion.prototype.getUrl = function () {
-  return this.bookmark.getUrl();
+  return this.bookmark.getUrl(this.getScore().getBindings());
 };
 
 /**
