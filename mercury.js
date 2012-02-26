@@ -952,8 +952,6 @@ Mercury.prototype.onInputChanged = function (text, suggest) {
       rest.push(suggests[i]);
     suggest(rest);
     this.chrome.setOmniboxDefaultSuggestion(best);
-  } else {
-    this.chrome.setOmniboxDefaultSuggestion(null);
   }
 };
 

@@ -59,6 +59,7 @@ FakeChrome.prototype.addOmniboxChangedListener = function (listener) {
 FakeChrome.prototype.setOmniboxText = function (value) {
   assertTrue(this.changeListener != null);
   var suggests = [];
+  this.defaultSuggestion = null;
   this.changeListener(value, function (value) {
     suggests = value;
   });

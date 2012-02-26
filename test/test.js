@@ -366,7 +366,7 @@ function testWildcards() {
   chrome.addBookmark('foo xx:/\\w*/', 'http://foo/xx/bar');
   chrome.addBookmark('bar xx:/\\w+/ yy:/\\d+/', 'http://bar/xx/foo/yy');
   chrome.addBookmark('cannon xx:/..//ss:/\\d+/', 'http://cannon/xx?id=ss');
-  chrome.addBookmark('wobble xx:/../!ss:/\\d+/ wibble', 'http://wobble/xx/ss');
+  chrome.addBookmark('wobble dibble xx:/../!ss:/\\d+/ wibble', 'http://wobble/xx/ss');
   var mercury = new Mercury(chrome);
   mercury.install();
   function checkUrl(exp, text) {
@@ -380,7 +380,7 @@ function testWildcards() {
   checkUrl(['http://bar/asd/foo/123'], 'bar asd 123');
   checkUrl([], 'bar asd zdf');
   checkUrl(['http://cannon/dd?id=123'], 'c dd/123');
-  checkUrl(['http://wobble/dd/123'], 'wo dd!123');  
+  checkUrl(['http://wobble/dd/123'], 'wo di dd!123');  
   function checkDesc(exp, text) {
     var suggs = chrome.setOmniboxText(text);
     assertListEquals(exp, suggs.map(function (s) { return s.getSimpleDescription(); }));
@@ -388,7 +388,7 @@ function testWildcards() {
   checkDesc(['[foo ][xx]'], 'foo xx');
   checkDesc(['[f]oo[ ][xx]'], 'f xx');
   checkDesc(['[c]annon[ ][zz][/][32]'], 'c zz/32');
-  checkDesc(['[wo]bble[ ][zz][!][32][ wi]bble'], 'wo zz!32 wi');
+  checkDesc(['[wo]bble[ di]bble[ ][zz][!][32][ wi]bble'], 'wo di zz!32 wi');
 }
 
 function testWeights() {
