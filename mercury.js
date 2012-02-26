@@ -196,10 +196,10 @@ Matcher.prototype.matchFingerprint = function (inputPrint) {
  * corresponding matching strings, plus 1 for the distance in index between
  * where the matching strings occur.
  */
-Matcher.prototype.getScore = function (inputNoCase) {
+Matcher.prototype.getScore = function (input, inputNoCase) {
   var matchList = [];
   var bindings = {};
-  var matches = this.doesMatch(0, 0, inputNoCase, matchList, bindings);
+  var matches = this.doesMatch(0, 0, input, inputNoCase, matchList, bindings);
   if (matches) {
     matchList.reverse();
     return new Score(this.calcMatchWeight(0, matchList, 0), matchList, bindings);
@@ -320,13 +320,13 @@ SubstringMatcher.prototype.calcMatchWeight = function (globalOffset, matchList, 
  * http://blacktree-alchemy.googlecode.com/svn/trunk/Crucible/Code/NSString_BLTRExtensions.m.
  */
 SubstringMatcher.prototype.doesMatch = function (globalOffset, localOffset,
-    abbrev, matches, bindings) {
+    abbrev, abbrevNoCase, matches, bindings) {
   var string = this.getPattern();
   var stringNoCase = this.getPatternNoCase();
-  if (abbrev.length == 0) {
+  if (abbrevNoCase.length == 0) {
     var next = this.getNext();
     if (next) {
-      return next.doesMatch(globalOffset, 0, abbrev, matches, bindings);
+      return next.doesMatch(globalOffset, 0, abbrev, abbrevNoCase, matches, bindings);
     } else {
       // The empty string matches anything.
       return true;
@@ -334,14 +334,16 @@ SubstringMatcher.prototype.doesMatch = function (globalOffset, localOffset,
   } else if (localOffset == string.length) {
     // If we're at the end of this matcher try the next one.
     var next = this.getNext();
-    return next ? next.doesMatch(globalOffset, 0, abbrev, matches, bindings) : false;
+    return next
+        ? next.doesMatch(globalOffset, 0, abbrev, abbrevNoCase, matches, bindings)
+        : false;
   }
   // The more of the abbreviation we can match in one block the better, so we
   // start with the best possible option, everything, and lower our
   // expectations gradually.
-  for (var i = abbrev.length; i > 0; i--) {
-    var abbrevPart = abbrev.substring(0, i);
-    var matchStartLocalOffset = stringNoCase.indexOf(abbrevPart, localOffset);
+  for (var i = abbrevNoCase.length; i > 0; i--) {
+    var abbrevNoCasePart = abbrevNoCase.substring(0, i);
+    var matchStartLocalOffset = stringNoCase.indexOf(abbrevNoCasePart, localOffset);
     if (matchStartLocalOffset == -1) {
       // We didn't find a match.  Okay, we were too ambitious -- retry with
       // the next smaller substring.
@@ -352,11 +354,12 @@ SubstringMatcher.prototype.doesMatch = function (globalOffset, localOffset,
     var matchStartGlobalOffset = globalOffset + matchDistance;
     var matchEndGlobalOffset = matchStartGlobalOffset + i;
     var nextAbbrev = abbrev.substring(i);
+    var nextAbbrevNoCase = abbrevNoCase.substring(i);
     // Score the remaining abbreviation in the rest of the string.  If it
     // doesn't match then there's no reason to do the extra work associated
     // with scoring and recording a match.
     var restMatches = this.doesMatch(matchEndGlobalOffset, matchEndLocalOffset,
-        nextAbbrev, matches, bindings);
+        nextAbbrev, nextAbbrevNoCase, matches, bindings);
     if (!restMatches) {
       // We found a match but the rest didn't.  So again we have to retry
       // with a smaller substring.
@@ -401,7 +404,7 @@ WildcardMatcher.prototype.calcFingerprint = function () {
  * Test if this wildcard matcher matches the given input.
  */
 WildcardMatcher.prototype.doesMatch = function (globalOffset, localOffset,
-    abbrev, matches, bindings) {
+    abbrev, abbrevNoCase, matches, bindings) {
   var match = abbrev.match(this.regexp);
   if (match) {
     var binding = match[0];
@@ -409,12 +412,14 @@ WildcardMatcher.prototype.doesMatch = function (globalOffset, localOffset,
     if (next) {
       var newGlobalOffset = globalOffset + binding.length;
       var newAbbrev = abbrev.substring(binding.length);
-      if (!next.doesMatch(newGlobalOffset, 0, newAbbrev, matches, bindings))
+      var newAbbrevNoCase = abbrevNoCase.substring(binding.length);
+      if (!next.doesMatch(newGlobalOffset, 0, newAbbrev, newAbbrevNoCase,
+          matches, bindings))
         return false;
     }
     if (matches) {
       bindings[this.name] = binding;
-      matches.push([globalOffset, globalOffset + binding.length]);
+      matches.push([globalOffset, globalOffset + binding.length - 1]);
     }
     return true;
   } else {
@@ -435,7 +440,7 @@ WildcardMatcher.prototype.addTitleDescription = function (globalOffset,
   var endOffset = match[1] - globalOffset;
   regionsOut.push([textOffset + startOffset, textOffset + endOffset])
   if (matchOffset + 1 < matches.length) {
-    this.getNext().addTitleDescription(match[1], textOffset + value.length,
+    this.getNext().addTitleDescription(match[1] + 1, textOffset + value.length,
         partsOut, regionsOut, score, matchOffset + 1);
   }
 }
@@ -445,7 +450,7 @@ WildcardMatcher.prototype.calcMatchWeight = function (globalOffset, matchList, l
     return 0;
   } else {
     var match = matchList[listOffset];
-    return this.getNext().calcMatchWeight(match[1], matchList, listOffset + 1);
+    return this.getNext().calcMatchWeight(match[1] + 1, matchList, listOffset + 1);
   }
 };
 
@@ -573,9 +578,9 @@ Bookmark.prototype.getPath = function () {
 /**
  * Returns a score vector of this bookmark agains the given input.
  */
-Bookmark.prototype.getScore = function (inputNoCase, inputFingerprint) {
+Bookmark.prototype.getScore = function (input, inputNoCase, inputFingerprint) {
   if (this.getMatcher().matchFingerprint(inputFingerprint)) {
-    return this.getMatcher().getScore(inputNoCase);
+    return this.getMatcher().getScore(input, inputNoCase);
   } else {
     return null;
   }
@@ -1055,7 +1060,7 @@ SuggestionRequest.prototype.getAllMatches = function (input) {
   var inputFingerprint = Bookmark.calcFingerprint(inputNoCase);
   for (var i = 0; i < this.bookmarks.length; i++) {
     var bookmark = this.bookmarks[i];
-    var score = bookmark.getScore(inputNoCase, inputFingerprint);
+    var score = bookmark.getScore(input, inputNoCase, inputFingerprint);
     if (score)
       matches.push(new SingleSuggestion(bookmark, input, score));
   }
@@ -1380,7 +1385,7 @@ Scanner.scan = function (str, settings) {
   var tokens = [];
   while (scanner.hasMore()) {
     var token = scanner.scanToken();
-    tokens.push(Bookmark.dropCase(token));
+    tokens.push(token);
   }
   return tokens;
 };

@@ -61,7 +61,7 @@ function fakeBookmark(title) {
 }
 
 function getMatchRanges(a, b) {
-  var score = new SubstringMatcher(a).getScore(Bookmark.dropCase(b));
+  var score = new SubstringMatcher(a).getScore(b, Bookmark.dropCase(b));
   if (score == null) {
     return null;
   } else {
@@ -95,7 +95,7 @@ function testMatchRanges() {
 }
 
 function getMatchScore(a, b) {
-  var score = new SubstringMatcher(a).getScore(Bookmark.dropCase(b));
+  var score = new SubstringMatcher(a).getScore(b, Bookmark.dropCase(b));
   if (score == null) {
     return 0;
   } else {
@@ -145,8 +145,7 @@ function testSimpleMatch() {
 function runScannerTest(config, input, expected) {
   var settings = new Settings(config);
   var tokens = Scanner.scan(input, settings);
-  var expectedTokens = expected.map(Bookmark.dropCase);
-  assertListEquals(expectedTokens, tokens);
+  assertListEquals(expected, tokens);
 }
 
 function testScanner() {
@@ -194,8 +193,7 @@ function mapRecursive(obj, fun) {
 function runParserTest(input, expected) {
   var settings = new Settings({});
   var parsed = Parser.parse(input, settings);
-  var expectedTree = mapRecursive(expected, Bookmark.dropCase);
-  assertListEquals(expectedTree, parsed.toPojso());
+  assertListEquals(expected, parsed.toPojso());
 }
 
 function testParserGrouping() {
@@ -214,8 +212,7 @@ function testParserGrouping() {
 function runExpansionTest(input, expected) {
   var settings = new Settings({});
   var parsed = Parser.parse(input, settings);
-  var expectedTree = mapRecursive(expected, Bookmark.dropCase);
-  assertListEquals(expectedTree, parsed.expand());
+  assertListEquals(expected, parsed.expand());
 }
 
 function testParserExpansion() {
@@ -368,24 +365,30 @@ function testWildcards() {
   var chrome = new FakeChrome();
   chrome.addBookmark('foo xx:/\\w*/', 'http://foo/xx/bar');
   chrome.addBookmark('bar xx:/\\w+/ yy:/\\d+/', 'http://bar/xx/foo/yy');
+  chrome.addBookmark('cannon xx:/..//ss:/\\d+/', 'http://cannon/xx?id=ss');
+  chrome.addBookmark('wobble xx:/../!ss:/\\d+/ wibble', 'http://wobble/xx/ss');
   var mercury = new Mercury(chrome);
   mercury.install();
   function checkUrl(exp, text) {
     var suggs = chrome.setOmniboxText(text);
     assertListEquals(exp, suggs.map(function (s) { return s.getUrl(); }));
   }
-  checkUrl(['http://foo/BU/bar'], 'foo bu');
-  checkUrl(['http://foo/B/bar'], 'foo b');
-  checkUrl(['http://foo/AFLSDFALS/bar'], 'foo aflsdfals');
+  checkUrl(['http://foo/bu/bar'], 'foo bu');
+  checkUrl(['http://foo/b/bar'], 'foo b');
+  checkUrl(['http://foo/aflsdfals/bar'], 'foo aflsdfals');
   checkUrl(['http://foo//bar'], 'foo ');
-  checkUrl(['http://bar/ASD/foo/123'], 'bar asd 123');
+  checkUrl(['http://bar/asd/foo/123'], 'bar asd 123');
   checkUrl([], 'bar asd zdf');
+  checkUrl(['http://cannon/dd?id=123'], 'c dd/123');
+  checkUrl(['http://wobble/dd/123'], 'wo dd!123');  
   function checkDesc(exp, text) {
     var suggs = chrome.setOmniboxText(text);
     assertListEquals(exp, suggs.map(function (s) { return s.getSimpleDescription(); }));
   }
-  checkDesc(['[foo ][XX]'], 'foo xx');
-  checkDesc(['[f]oo[ ][XX]'], 'f xx');
+  checkDesc(['[foo ][xx]'], 'foo xx');
+  checkDesc(['[f]oo[ ][xx]'], 'f xx');
+  checkDesc(['[c]annon[ ][zz][/][32]'], 'c zz/32');
+  checkDesc(['[wo]bble[ ][zz][!][32][ wi]bble'], 'wo zz!32 wi');
 }
 
 function testWeights() {
