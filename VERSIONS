@@ -1,5 +1,10 @@
+2012-02-26  0.15
+    Fixed a deafult suggestion related bug.
+
+
 2012-02-26  0.14
     Added wildcards.
+
 
 2011-12-14  0.13
     Changed matching algorithm to favor matches early in the string
