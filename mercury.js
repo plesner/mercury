@@ -301,7 +301,7 @@ SubstringMatcher.prototype.calcMatchWeight = function (globalOffset, matchList, 
     if (start >= weights.length) {
       var rest = this.getNext().calcMatchWeight(globalOffset + weights.lenght,
         matchList, i);
-      return score + (rest * 0.9);
+      return score + (rest * dampening * 0.9);
     } else {
       for (var j = start; j <= end; j++) {
         score += (weights[j] * dampening);
@@ -446,11 +446,13 @@ WildcardMatcher.prototype.addTitleDescription = function (globalOffset,
 }
 
 WildcardMatcher.prototype.calcMatchWeight = function (globalOffset, matchList, listOffset) {
+  var match = matchList[listOffset];
+  var score = match[1] - match[0] + 1;
   if (listOffset == matchList.length - 1) {
-    return 0;
+    return score;
   } else {
     var match = matchList[listOffset];
-    return this.getNext().calcMatchWeight(match[1] + 1, matchList, listOffset + 1);
+    return score + this.getNext().calcMatchWeight(match[1] + 1, matchList, listOffset + 1);
   }
 };
 
